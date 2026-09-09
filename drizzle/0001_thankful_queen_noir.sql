@@ -1,0 +1,1 @@
+ALTER TABLE `room_players` ADD `rock` text DEFAULT '' NOT NULL;

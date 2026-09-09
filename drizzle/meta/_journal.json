@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1784384734116,
+      "tag": "0000_smart_kitty_pryde",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784436093720,
+      "tag": "0001_thankful_queen_noir",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784437068883,
+      "tag": "0002_steep_chameleon",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784443300172,
+      "tag": "0003_wild_the_anarchist",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784448254583,
+      "tag": "0004_narrow_jackal",
+      "breakpoints": true
+    }
+  ]
+}

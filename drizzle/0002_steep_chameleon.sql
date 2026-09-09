@@ -1,0 +1,1 @@
+ALTER TABLE `room_players` ADD `anim` text DEFAULT '' NOT NULL;
