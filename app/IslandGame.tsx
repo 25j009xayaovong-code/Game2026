@@ -260,6 +260,12 @@ export default function IslandGame() {
     for(const x of [-.23,.23]){const strap=new THREE.Mesh(new THREE.BoxGeometry(.06,.72,.05),boot);strap.position.set(x,1.25,.64);model.add(strap);}
     const neck=new THREE.Mesh(new THREE.CylinderGeometry(.15,.17,.18,8),skin);neck.position.y=1.83;model.add(neck);
     const head=new THREE.Mesh(new THREE.IcosahedronGeometry(.38,1),skin);head.position.y=2.12;head.castShadow=true;model.add(head);
+    const faceMat=new THREE.MeshStandardMaterial({color:0x1c1b1e, roughness:0.72, metalness:0.08});
+    const faceDetails=new THREE.Group();head.add(faceDetails);
+    const leftEye=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMat);leftEye.position.set(-.12,.06,-.31);faceDetails.add(leftEye);
+    const rightEye=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMat);rightEye.position.set(.12,.06,-.31);faceDetails.add(rightEye);
+    const nose=new THREE.Mesh(new THREE.ConeGeometry(.045,.16,12),faceMat);nose.rotation.x=Math.PI/2;nose.position.set(0,-.02,-.36);faceDetails.add(nose);
+    const mouth=new THREE.Mesh(new THREE.BoxGeometry(.18,.04,.02),faceMat);mouth.position.set(0,-.18,-.32);faceDetails.add(mouth);
     const hair=new THREE.Mesh(new THREE.SphereGeometry(.39,8,5,0,Math.PI*2,0,Math.PI*.48),hairMat);hair.position.y=2.23;model.add(hair);
     const limb=(x:number,y:number,material:THREE.Material,length:number,radius:number)=>{const pivot=new THREE.Group();pivot.position.set(x,y,0);const mesh=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius*.9,length,7),material);mesh.position.y=-length/2;mesh.castShadow=true;pivot.add(mesh);model.add(pivot);return pivot;};
     const leftArm=limb(-.56,1.58,shirt,.72,.13),rightArm=limb(.56,1.58,shirt,.72,.13);
@@ -309,6 +315,12 @@ export default function IslandGame() {
       const torso=new THREE.Mesh(new THREE.CapsuleGeometry(.43,.74,3,7),shirtR);torso.position.y=1.22;avatar.add(torso);
       const backpack=new THREE.Mesh(new THREE.BoxGeometry(.67,.78,.36),packR);backpack.position.set(0,1.25,.43);avatar.add(backpack);
       const face=new THREE.Mesh(new THREE.IcosahedronGeometry(.38,1),skinR);face.position.y=2.12;avatar.add(face);
+      const faceMatR=new THREE.MeshStandardMaterial({color:0x1c1b1e, roughness:0.72, metalness:0.08});
+      const faceDetailsR=new THREE.Group();face.add(faceDetailsR);
+      const leftEyeR=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMatR);leftEyeR.position.set(-.12,.06,-.31);faceDetailsR.add(leftEyeR);
+      const rightEyeR=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMatR);rightEyeR.position.set(.12,.06,-.31);faceDetailsR.add(rightEyeR);
+      const noseR=new THREE.Mesh(new THREE.ConeGeometry(.045,.16,12),faceMatR);noseR.rotation.x=Math.PI/2;noseR.position.set(0,-.02,-.36);faceDetailsR.add(noseR);
+      const mouthR=new THREE.Mesh(new THREE.BoxGeometry(.18,.04,.02),faceMatR);mouthR.position.set(0,-.18,-.32);faceDetailsR.add(mouthR);
       const cap=new THREE.Mesh(new THREE.SphereGeometry(.39,8,5,0,Math.PI*2,0,Math.PI*.48),hairR);cap.position.y=2.23;avatar.add(cap);
       const remoteLimb=(x:number,y:number,material:THREE.Material,length:number,radius:number)=>{const pivot=new THREE.Group(),mesh=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius*.9,length,6),material);pivot.position.set(x,y,0);mesh.position.y=-length/2;pivot.add(mesh);avatar.add(pivot);return pivot;};
       const leftArmR=remoteLimb(-.56,1.58,shirtR,.72,.13),rightArmR=remoteLimb(.56,1.58,shirtR,.72,.13),leftLegR=remoteLimb(-.23,.82,pantsR,.83,.17),rightLegR=remoteLimb(.23,.82,pantsR,.83,.17);
@@ -526,8 +538,7 @@ function CharacterPreview({appearance}:{appearance:Appearance}){
     const skin=mat(appearance.skin),shirt=mat(appearance.shirt),pants=mat(appearance.pants),packMat=mat(appearance.pack),hairMat=mat(appearance.hair),boots=mat(0x17262b);
     const player=new THREE.Group();player.scale.setScalar(1);scene.add(player);
     const mesh=(geo:THREE.BufferGeometry,material:THREE.Material,x:number,y:number,z=0)=>{const m=new THREE.Mesh(geo,material);m.position.set(x,y,z);player.add(m);return m;};
-    const torso=mesh(new THREE.CapsuleGeometry(.43,.74,4,8),shirt,0,1.22);mesh(new THREE.BoxGeometry(.67,.78,.36),packMat,0,1.25,.43);mesh(new THREE.CylinderGeometry(.15,.17,.18,8),skin,0,1.83);mesh(new THREE.IcosahedronGeometry(.38,1),skin,0,2.12);mesh(new THREE.SphereGeometry(.39,8,5,0,Math.PI*2,0,Math.PI*.48),hairMat,0,2.23);
-    for(const x of [-.14,.14])mesh(new THREE.SphereGeometry(.045,6,6),mat(0x17211f),x,2.13,-.36);
+    const torso=mesh(new THREE.CapsuleGeometry(.43,.74,4,8),shirt,0,1.22);mesh(new THREE.BoxGeometry(.67,.78,.36),packMat,0,1.25,.43);mesh(new THREE.CylinderGeometry(.15,.17,.18,8),skin,0,1.83);const headPreview=mesh(new THREE.IcosahedronGeometry(.38,1),skin,0,2.12);const facePreviewMat=mat(0x1c1b1e);const facePreview=new THREE.Group();headPreview.add(facePreview);for(const x of [-.12,.12]){const eye=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),facePreviewMat);eye.position.set(x,.06,-.31);facePreview.add(eye);}const nose=new THREE.Mesh(new THREE.ConeGeometry(.045,.16,12),facePreviewMat);nose.rotation.x=Math.PI/2;nose.position.set(0,-.02,-.36);facePreview.add(nose);const mouth=new THREE.Mesh(new THREE.BoxGeometry(.18,.04,.02),facePreviewMat);mouth.position.set(0,-.18,-.32);facePreview.add(mouth);mesh(new THREE.SphereGeometry(.39,8,5,0,Math.PI*2,0,Math.PI*.48),hairMat,0,2.23);
     const limb=(x:number,y:number,material:THREE.Material,length:number,radius:number)=>{const p=new THREE.Group();p.position.set(x,y,0);const m=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius*.9,length,7),material);m.position.y=-length/2;p.add(m);player.add(p);return p;};
     const la=limb(-.56,1.58,shirt,.72,.13),ra=limb(.56,1.58,shirt,.72,.13),ll=limb(-.23,.82,pants,.83,.17),rl=limb(.23,.82,pants,.83,.17);
     const width=.78+appearance.build*.5,height=.82+appearance.height*.38,armScale=.82+appearance.muscle*.55;player.scale.set(width,height,width);torso.scale.set(1+appearance.muscle*.18,1,1+appearance.muscle*.18);la.scale.set(armScale,1,armScale);ra.scale.set(armScale,1,armScale);la.position.x=-(.48+appearance.build*.11+appearance.muscle*.07);ra.position.x=-la.position.x;
