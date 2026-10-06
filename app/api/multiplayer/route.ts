@@ -70,7 +70,8 @@ export async function POST(request: Request) {
       return Response.json(await roomState(code,playerId));
     }
     if(action==="repair"){
-      const [room]=await db.select().from(rooms).where(eq(rooms.code,code)).limit(1);if(room&&room.scrap>=6&&room.cells>=3)await db.update(rooms).set({won:true,updatedAt:now}).where(eq(rooms.code,code));
+      const requiredScrap=Math.max(3,Math.min(6,Number(body.requiredScrap)||6)),requiredCells=Math.max(1,Math.min(3,Number(body.requiredCells)||3));
+      const [room]=await db.select().from(rooms).where(eq(rooms.code,code)).limit(1);if(room&&room.scrap>=requiredScrap&&room.cells>=requiredCells)await db.update(rooms).set({won:true,updatedAt:now}).where(eq(rooms.code,code));
       return Response.json(await roomState(code,playerId));
     }
     if(action==="signal"){
