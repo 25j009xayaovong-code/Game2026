@@ -16,7 +16,7 @@ npm run dev
 npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+The Cloudflare runtime configuration is defined in `wrangler.jsonc`.
 
 ## Included Shape
 
