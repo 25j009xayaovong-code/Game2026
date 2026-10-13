@@ -15,6 +15,122 @@ type VoiceSignal={id:number;fromId:string;payload:{type:"offer"|"answer"|"candid
 type ChatMessage={id:number;playerId:string;name:string;message:string;createdAt:number};
 type OnlineState={room:{code:string;scrap:number;cells:number;won:boolean;time:number;serverNow:number};players:OnlinePlayer[];collected:number[];signals?:VoiceSignal[];messages?:ChatMessage[]};
 type CollectionQuest={wood:number;stone:number;treasure:number;discoveries:number;scrap:number;cells:number};
+type Language="th"|"ja";
+const TRANSLATIONS:Record<string,string>={
+  "เกาะที่จดจำคุณ":"あなたを覚えている島",
+  "เกมสามมิติ Echo Island":"Echo Island 3Dゲーム",
+  "ปิดไมโครโฟน":"マイクをオフ",
+  "เปิดเสียงตามระยะ":"近距離ボイスをオン",
+  "เปิดแชต":"チャットを開く",
+  "ปรับแต่งตัวละคร":"キャラクターをカスタマイズ",
+  "วิธีเล่น":"遊び方",
+  "แชตห้อง":"ルームチャット",
+  "ยังไม่มีข้อความ เริ่มคุยกับเพื่อนๆได้เลย":"まだメッセージがありません。友達と話してみましょう",
+  "พิมพ์แผนหรือข้อความถึงเพื่อน…":"計画やメッセージを入力…",
+  "ส่ง":"送信",
+  "คัดลอกรหัส":"コードをコピー",
+  "พลังชีวิต":"体力",
+  "ออกซิเจน":"酸素",
+  "กลางคืน":"夜",
+  "กลางวัน":"昼",
+  "โลหะ":"金属",
+  "เซลล์":"セル",
+  "ไม้":"木材",
+  "หิน":"石",
+  "แผนที่สำรวจ":"探索マップ",
+  "ทิศทางการเคลื่อนที่":"移動方向",
+  "ซ่อมหอส่งสัญญาณ":"通信塔を修理",
+  "ปล่อยเมาส์ขวาเพื่อยกเลิก • คลิกซ้ายเพื่อโยนแรง":"右クリックを離してキャンセル • 左クリックで強く投げる",
+  "กดเมาส์ขวาค้างเพื่อเล็ง":"右クリック長押しで狙う",
+  "เคลื่อนที่":"移動",
+  "ประตูดันเจี้ยน":"ダンジョンの扉",
+  "สร้างกำแพงฐาน":"拠点の壁を作る",
+  "รวบรวมไม้ 4 และหิน 3 เพื่อสร้างแพ":"木材4個と石3個を集めていかだを作る",
+  "สำรวจสองเกาะ ป้อมปราการ และหอสังเกตการณ์":"2つの島、要塞、見張り台を探索する",
+  "เคลื่อนที่":"移動",
+  "ประตูดันเจี้ยน":"ダンジョンの扉",
+  "บันไดป้อม":"要塞のはしご",
+  "ใช้กระเป๋า":"バックパックを使う",
+  "ขึ้น":"上昇",
+  "โดด":"ジャンプ",
+  "เร็ว":"速く泳ぐ",
+  "วิ่ง":"走る",
+  "ดำน้ำ":"潜水",
+  "โยน":"投げる",
+  "ยกหิน":"石を拾う",
+  "บันไดป้อม":"要塞のはしご",
+  "ใช้กระเป๋า":"バックパックを使う",
+  "ขึ้น":"上昇",
+  "โดด":"ジャンプ",
+  "เร็ว":"速く泳ぐ",
+  "วิ่ง":"走る",
+  "ดำน้ำ":"潜水",
+  "โยน":"投げる",
+  "ยกหิน":"石を拾う",
+  "ภารกิจ":"ミッション",
+  "ปรับแต่ง":"カスタマイズ",
+  "เล่นออนไลน์":"オンラインで遊ぶ",
+  "เล่นคนเดียว":"一人で遊ぶ",
+  "สร้างห้องใหม่":"新しいルームを作成",
+  "เข้าร่วม":"参加",
+  "ชื่อผู้เล่น":"プレイヤー名",
+  "รหัสห้อง":"ルームコード",
+  "กำลังเชื่อมต่อ…":"接続中…",
+  "ผู้เล่นสูงสุด 4 คน • รหัสห้องเป็นส่วนตัว":"最大4人 • ルームコードは非公開",
+  "กลับเข้าห้อง":"ルームに戻る",
+  "เล่นอีกครั้ง":"もう一度遊ぶ",
+  "คู่มือนักสำรวจ":"探検家ガイド",
+  "วิธีเอาชีวิตรอด":"生き残る方法",
+  "เข้าใจแล้ว":"わかりました",
+  "ปรับแต่งนักสำรวจ":"探検家をカスタマイズ",
+  "เลือกรูปลักษณ์และสรีระ การเปลี่ยนแปลงจะแสดงบนตัวละครและบันทึกโดยอัตโนมัติ":"外見と体格を選べます。変更はキャラクターに反映され、自動的に保存されます",
+  "ความสูง":"身長",
+  "รูปร่าง":"体格",
+  "กล้ามเนื้อ":"筋肉",
+  "เตี้ย":"低い",
+  "สูง":"高い",
+  "ผอม":"細身",
+  "อ้วน":"大柄",
+  "ธรรมดา":"普通",
+  "กำยำ":"たくましい",
+  "สีผิว":"肌の色",
+  "เสื้อเดินป่า":"探検服",
+  "กางเกง":"ズボン",
+  "กระเป๋า":"バックパック",
+  "สีผม":"髪色",
+  "ปลดล็อก":"解放",
+  "คืนค่าเดิม":"初期設定に戻す",
+  "เสร็จเรียบร้อย":"完了",
+  "ตัวอย่างสด":"ライブプレビュー",
+  "โมเดลจะหมุนเพื่อดูด้านหน้าและกระเป๋า":"モデルが回転して正面とバックパックを確認できます",
+  "ภารกิจต่อเนื่อง":"継続ミッション",
+  "ห้อง":"ルーム",
+  "คน":"人",
+  "คัดลอกรหัส":"コードをコピー",
+  "กด Q เพื่อคราฟต์แพ":"Qキーでいかだを作る",
+  "ซ่อมหอส่งสัญญาณและเอาชีวิตรอด":"通信塔を修理して生き残る",
+  "ค้นหาหีบสมบัติที่ซ่อนอยู่ทั้ง 3 ใบ":"隠された宝箱を3個探す",
+  "ค้นพบสถานที่สำคัญบนแผนที่ 6 แห่ง":"マップ上の重要地点を6か所発見する",
+  "ค้นหาความลับ 2 จุด":"秘密の場所を2か所探す",
+  "ทำให้ซอมบี้ล้ม 3 ตัว":"ゾンビを3体倒す",
+  "สำรวจสถานที่ 4 แห่ง":"4か所を探索する",
+  "สร้างกำแพงฐาน 2 ชิ้น":"拠点の壁を2枚作る",
+};
+const translate=(value:string,language:Language)=>{
+  if(language==="th")return value;
+  if(TRANSLATIONS[value])return TRANSLATIONS[value];
+  const raft=value.match(/^รวบรวมไม้ (\d+) และหิน (\d+) เพื่อสร้างแพ$/);
+  if(raft)return `木材${raft[1]}個と石${raft[2]}個を集めていかだを作る`;
+  const treasure=value.match(/^ค้นหาหีบสมบัติที่ซ่อนอยู่ทั้ง (\d+) ใบ$/);
+  if(treasure)return `隠された宝箱を${treasure[1]}個探す`;
+  const discoveries=value.match(/^ค้นพบสถานที่สำคัญบนแผนที่ (\d+) แห่ง$/);
+  if(discoveries)return `マップ上の重要地点を${discoveries[1]}か所発見する`;
+  return value;
+};
+const lerpAngle=(current:number,target:number,amount:number)=>{
+  const delta=Math.atan2(Math.sin(target-current),Math.cos(target-current));
+  return current+delta*amount;
+};
 const randomInt=(min:number,max:number)=>min+Math.floor(Math.random()*(max-min+1));
 const collectionQuestFor=(seed?:string):CollectionQuest=>{
   if(!seed)return {wood:randomInt(2,6),stone:randomInt(2,5),treasure:randomInt(1,3),discoveries:randomInt(3,6),scrap:randomInt(3,6),cells:randomInt(1,3)};
@@ -62,6 +178,9 @@ const surfaceHeight = (x: number, z: number) => { if (onBridge(x, z)) return BRI
 export default function IslandGame() {
   const mount = useRef<HTMLDivElement>(null);
   const keys = useRef<Record<string, boolean>>({});
+  const languageRef = useRef<Language>("th");
+  const languageEffectInitialized = useRef(false);
+  const [language, setLanguage] = useState<Language>("th");
   const [started, setStarted] = useState(false);
   const [hud, setHud] = useState(INITIAL);
   const [end, setEnd] = useState<"won" | "lost" | null>(null);
@@ -86,13 +205,22 @@ export default function IslandGame() {
   const [progress,setProgress]=useState<Progress>({coins:0,xp:0,level:1,runs:0,unlocks:0,achievements:[],secrets:0,bestDiscoveries:0});
   const progressRef=useRef(progress);
   const [previewQuest,setPreviewQuest]=useState<CollectionQuest>(()=>collectionQuestFor("solo-preview"));
-  const [randomQuest]=useState(()=>["ค้นหาความลับ 2 จุด","ทำให้ซอมบี้ล้ม 3 ตัว","สำรวจสถานที่ 4 แห่ง","สร้างกำแพงฐาน 2 ชิ้น"][Math.floor(Math.random()*4)]);
+  const [randomQuest]=useState("ค้นหาความลับ 2 จุด");
   const repair = useRef<() => void>(() => {});
   const rockAction = useRef<() => void>(() => {});
   const paused=useRef(false),appearanceRef=useRef(appearance),voiceToggle=useRef<()=>void>(()=>{}),chatSend=useRef<(message:string)=>void>(()=>{});
   const lookMaterials=useRef<Record<ColorKey,THREE.MeshStandardMaterial>|null>(null);
   const bodyShape=useRef<{player:THREE.Group;body:THREE.Mesh;leftArm:THREE.Group;rightArm:THREE.Group}|null>(null);
 
+  useEffect(()=>{
+    if(!languageEffectInitialized.current){
+      languageEffectInitialized.current=true;
+      try{if(localStorage.getItem("echo-island-language")==="ja"&&language==="th"){setLanguage("ja");return;}}catch{}
+    }
+    languageRef.current=language;
+    document.documentElement.lang=language;
+    try{localStorage.setItem("echo-island-language",language);}catch{}
+  },[language]);
   useEffect(()=>{try{const saved=localStorage.getItem("echo-island-look");if(saved)setAppearance({...DEFAULT_LOOK,...JSON.parse(saved)});}catch{}setLookLoaded(true);},[]);
   useEffect(()=>{try{const saved=localStorage.getItem("echo-island-room");if(saved)setSavedSession(JSON.parse(saved));const name=localStorage.getItem("echo-island-name");if(name)setPlayerName(name);}catch{}},[]);
   useEffect(()=>{try{const saved=localStorage.getItem("echo-island-progress");if(saved){const value={...progress,...JSON.parse(saved)};setProgress(value);progressRef.current=value;}}catch{}},[]);
@@ -558,8 +686,8 @@ export default function IslandGame() {
           z.root.visible=z.floor>0?dungeonLevel===z.floor:night&&dungeonLevel===0;if(!z.root.visible)return;z.root.rotation.x=0;
           const stunned=now<z.stunnedUntil,verticalGap=Math.abs(player.position.y-z.root.position.y),toPlayer=zombieDirection.subVectors(player.position,z.root.position);toPlayer.y=0;
           const distance=toPlayer.length(),sameIsland=(z.root.position.x<260)===(player.position.x<260),canReach=verticalGap<2.4;
-          const oldX=z.root.position.x,oldZ=z.root.position.z,eventBoost=nightEvent&&z.floor===0?1.55:1;if(npcAuthority&&!stunned&&sameIsland&&canReach&&distance<78){const targetAngle=Math.atan2(-toPlayer.x,-toPlayer.z);z.root.rotation.y=THREE.MathUtils.lerpAngle(z.root.rotation.y,targetAngle,Math.min(1,dt*4.5));const forward=wanderDirection.set(-Math.sin(z.root.rotation.y),0,-Math.cos(z.root.rotation.y));z.root.position.addScaledVector(forward,dt*(1.05+(i%4)*.12)*eventBoost);z.root.rotation.x=0;z.root.rotation.z=0;}else if(npcAuthority&&!stunned){z.root.rotation.y+=Math.sin(now*.0005+z.phase)*dt*.35;const forward=wanderDirection.set(-Math.sin(z.root.rotation.y),0,-Math.cos(z.root.rotation.y));z.root.position.addScaledVector(forward,dt*.22);}if(npcAuthority){const zombieWalls=z.floor>0?dungeonColliders:colliders;for(const c of zombieWalls){if("floor" in c&&c.floor!==z.floor)continue;const dx=z.root.position.x-c.x,dz=z.root.position.z-c.z,min=c.r+.46;if(Math.abs(dx)>min||Math.abs(dz)>min)continue;if(Math.hypot(dx,dz)<min){z.root.position.x=oldX;z.root.position.z=oldZ;z.root.rotation.y+=Math.PI*.62;break;}}}
-          if(npcAuthority&&canReach&&distance<1.35){const targetAngle=Math.atan2(-toPlayer.x,-toPlayer.z);z.root.rotation.y=THREE.MathUtils.lerpAngle(z.root.rotation.y,targetAngle,Math.min(1,dt*7));}
+          const oldX=z.root.position.x,oldZ=z.root.position.z,eventBoost=nightEvent&&z.floor===0?1.55:1;if(npcAuthority&&!stunned&&sameIsland&&canReach&&distance<78){const targetAngle=Math.atan2(-toPlayer.x,-toPlayer.z);z.root.rotation.y=lerpAngle(z.root.rotation.y,targetAngle,Math.min(1,dt*4.5));const forward=wanderDirection.set(-Math.sin(z.root.rotation.y),0,-Math.cos(z.root.rotation.y));z.root.position.addScaledVector(forward,dt*(1.05+(i%4)*.12)*eventBoost);z.root.rotation.x=0;z.root.rotation.z=0;}else if(npcAuthority&&!stunned){z.root.rotation.y+=Math.sin(now*.0005+z.phase)*dt*.35;const forward=wanderDirection.set(-Math.sin(z.root.rotation.y),0,-Math.cos(z.root.rotation.y));z.root.position.addScaledVector(forward,dt*.22);}if(npcAuthority){const zombieWalls=z.floor>0?dungeonColliders:colliders;for(const c of zombieWalls){if("floor" in c&&c.floor!==z.floor)continue;const dx=z.root.position.x-c.x,dz=z.root.position.z-c.z,min=c.r+.46;if(Math.abs(dx)>min||Math.abs(dz)>min)continue;if(Math.hypot(dx,dz)<min){z.root.position.x=oldX;z.root.position.z=oldZ;z.root.rotation.y+=Math.PI*.62;break;}}}
+          if(npcAuthority&&canReach&&distance<1.35){const targetAngle=Math.atan2(-toPlayer.x,-toPlayer.z);z.root.rotation.y=lerpAngle(z.root.rotation.y,targetAngle,Math.min(1,dt*7));}
           const zombieOnSecond=z.floor===0&&Math.hypot(z.root.position.x-SECOND_X,z.root.position.z-SECOND_Z)<SECOND_RADIUS;z.root.position.y=(z.floor>0?DUNGEON_LEVELS[z.floor-1]:zombieOnSecond?secondSurfaceHeight(z.root.position.x,z.root.position.z):surfaceHeight(z.root.position.x,z.root.position.z))+(stunned?.28:0);z.root.rotation.x=0;z.root.rotation.z=THREE.MathUtils.lerp(z.root.rotation.z,0,.3);const biting=!stunned&&canReach&&distance<1.5,walk=stunned||biting?0:Math.sin(now*.008+z.phase)*.28;z.leftArm.rotation.x=biting?-.9:-.62-walk;z.rightArm.rotation.x=biting?-.9:-.62+walk;z.leftLeg.rotation.x=-walk;z.rightLeg.rotation.x=walk;
           if(!downed&&biting&&now-z.lastHit>850){z.lastHit=now;const biteDamage=i>=20?15:10;health=Math.max(0,health-biteDamage);sound(82,.18);notice(i>=20?"บอสดันเจี้ยนโจมตี!":"ซอมบี้กัดคุณ! ใช้หินขว้างหรือวิ่งหนี",1.5);if(health<=0){health=0;downed=true;downedTimer=15;reviveProgress=0;}}
         });
@@ -569,7 +697,7 @@ export default function IslandGame() {
         if(downed){downedTimer-=dt;const helper=[...remotePlayers.values()].some(a=>a.root.position.distanceTo(player.position)<3);reviveProgress=helper?reviveProgress+dt:Math.max(0,reviveProgress-dt*.5);model.rotation.z=THREE.MathUtils.lerp(model.rotation.z,-1.45,.18);model.rotation.x=THREE.MathUtils.lerp(model.rotation.x,0,.18);model.position.y=THREE.MathUtils.lerp(model.position.y,.18,.16);if(reviveProgress>=2.5){downed=false;health=45;oxygen=60;model.rotation.set(0,0,0);model.position.y=0;sound(760,.3);notice("เพื่อนช่วยคุณกลับขึ้นมาแล้ว!",3);}else if(downedTimer<=0){gameOver=true;setEnd("lost");}}else{model.rotation.z=THREE.MathUtils.lerp(model.rotation.z,0,.15);model.position.y=THREE.MathUtils.lerp(model.position.y,0,.18);}
         if(!downed&&!airborne&&!swimming){const bodyRhythm=moving?Math.abs(Math.sin(now*(keys.current.ShiftLeft?.014:.01)))*(keys.current.ShiftLeft?.07:.045):0;model.position.y=THREE.MathUtils.lerp(model.position.y,bodyRhythm,.25);model.rotation.z=THREE.MathUtils.lerp(model.rotation.z,moving?Math.sin(now*(keys.current.ShiftLeft?.014:.01))*.025:0,.2);}
         if(onlineSession&&now-lastSync>115&&syncInFlight===0){lastSync=now;syncInFlight=1;const anim=[leftArm.rotation.x,rightArm.rotation.x,leftLeg.rotation.x,rightLeg.rotation.x,model.rotation.x],isAuthority=[onlineSession.playerId,...remotePlayers.keys()].sort()[0]===onlineSession.playerId,sendNpcs=isAuthority&&now-lastNpcSync>450,full=now-lastFullSync>1000;if(sendNpcs)lastNpcSync=now;if(full)lastFullSync=now;const npcs=sendNpcs?{z:zombies.map(z=>[z.root.position.x,z.root.position.y,z.root.position.z,z.root.rotation.y]),d:[dragon.position.x,dragon.position.y,dragon.position.z,dragon.rotation.y]} as NpcSnapshot:undefined;void onlinePost({action:"sync",x:player.position.x,y:player.position.y,z:player.position.z,rotation:player.rotation.y,pose:localPose,anim,appearance:{...appearanceRef.current,...(npcs?{_npcs:npcs}:{})},rock:onlineRock(),full}).finally(()=>{syncInFlight=0;});}
-        if(now-lastHud>160){lastHud=now;const quest=!craftedRaft?wood>=4&&stone>=3?"กด Q เพื่อคราฟต์แพ":"รวบรวมไม้ 4 และหิน 3 เพื่อสร้างแพ":treasure<3?"ค้นหาหีบสมบัติที่ซ่อนอยู่ทั้ง 3 ใบ":discoveries<6?"ค้นพบสถานที่สำคัญบนแผนที่ 6 แห่ง":"ซ่อมหอส่งสัญญาณและเอาชีวิตรอด";const questProgress=!craftedRaft?Math.min(100,(wood/4+stone/3)*50):treasure<3?treasure/3*100:discoveries<6?discoveries/6*100:Math.min(100,(scrap/6+cells/3)*50);let nearFort=false;for(const f of fortresses)if(Math.hypot(player.position.x-f.x,player.position.z-f.ladderZ)<2.25)nearFort=true;const defaultMessage=climbing?(climbFort>=0?"เกาะบันไดป้อม • W ขึ้น • S ลง • L ปล่อย":"กำลังปีนหอสังเกตการณ์ • W ขึ้น • S ลง"):nearFort?"กด L เพื่อเกาะบันไดป้อม":ladderNear?"กด W เพื่อปีนบันไดหอสังเกตการณ์":ridingRaft?"กำลังล่องแพ • กด R เพื่อลง":underwater?(fastDive?"ว่ายเร็วใต้น้ำ • กด Space เพื่อขึ้น":"กำลังดำน้ำ • กด Shift ร่วมกับ C เพื่อว่ายเร็ว"):swimming?(keys.current.ShiftLeft?"กำลังว่ายเร็วที่ผิวน้ำ":"กำลังลอยน้ำ • กด Shift เพื่อว่ายเร็ว • C เพื่อดำน้ำ"):nearTower?(scrap>=6&&cells>=3?"กด E เพื่อซ่อมหอส่งสัญญาณ":"หอส่งสัญญาณต้องการ 6 เศษโลหะ + 3 เซลล์"):"สำรวจสองเกาะ ป้อมปราการ และหอสังเกตการณ์";setHud(h=>({ ...h,health,oxygen:Math.round(oxygen),inWater:swimming&&!ridingRaft,scrap,cells,wood,stone,treasure,discoveries,mapX:player.position.x,mapZ:player.position.z,mapRotation:-THREE.MathUtils.radToDeg(player.rotation.y),quest,questProgress,time:gameTime,nearTower,message:messageUntil<now?defaultMessage:h.message }));}
+        if(now-lastHud>160){lastHud=now;const quest=!craftedRaft?wood>=4&&stone>=3?"กด Q เพื่อคราฟต์แพ":"รวบรวมไม้ 4 และหิน 3 เพื่อสร้างแพ":treasure<3?"ค้นหาหีบสมบัติที่ซ่อนอยู่ทั้ง 3 ใบ":discoveries<6?"ค้นพบสถานที่สำคัญบนแผนที่ 6 แห่ง":"ซ่อมหอส่งสัญญาณและเอาชีวิตรอด";const questProgress=!craftedRaft?Math.min(100,(wood/4+stone/3)*50):treasure<3?treasure/3*100:discoveries<6?discoveries/6*100:Math.min(100,(scrap/6+cells/3)*50);let nearFort=false;for(const f of fortresses)if(Math.hypot(player.position.x-f.x,player.position.z-f.ladderZ)<2.25)nearFort=true;const defaultMessage=climbing?(climbFort>=0?"เกาะบันไดป้อม • W ขึ้น • S ลง • L ปล่อย":"กำลังปีนหอสังเกตการณ์ • W ขึ้น • S ลง"):nearFort?"กด L เพื่อเกาะบันไดป้อม":ladderNear?"กด W เพื่อปีนบันไดหอสังเกตการณ์":ridingRaft?"กำลังล่องแพ • กด R เพื่อลง":underwater?(fastDive?"ว่ายเร็วใต้น้ำ • กด Space เพื่อขึ้น":"กำลังดำน้ำ • กด Shift ร่วมกับ C เพื่อว่ายเร็ว"):swimming?(keys.current.ShiftLeft?"กำลังว่ายเร็วที่ผิวน้ำ":"กำลังลอยน้ำ • กด Shift เพื่อว่ายเร็ว • C เพื่อดำน้ำ"):nearTower?(scrap>=6&&cells>=3?"กด E เพื่อซ่อมหอส่งสัญญาณ":"หอส่งสัญญาณต้องการ 6 เศษโลหะ + 3 เซลล์"):"สำรวจสองเกาะ ป้อมปราการ และหอสังเกตการณ์";setHud(h=>({ ...h,health,oxygen:Math.round(oxygen),inWater:swimming&&!ridingRaft,scrap,cells,wood,stone,treasure,discoveries,mapX:player.position.x,mapZ:player.position.z,mapRotation:-THREE.MathUtils.radToDeg(player.rotation.y),quest,questProgress,time:gameTime,nearTower,message:messageUntil<now?defaultMessage:h.message}));}
         if(now-lastHud<20){const dynamicQuest=collectionQuestStatus(collectionQuest,craftedRaft,wood,stone,treasure,discoveries,scrap,cells);setHud(h=>({...h,...dynamicQuest}));}
       }
       for (const avatar of remotePlayers.values()) { const predictionSeconds = Math.min(.18, Math.max(0, (now - avatar.sampleAt) / 1000)); avatar.renderTarget.copy(avatar.target).addScaledVector(avatar.velocity, predictionSeconds); const gap = avatar.root.position.distanceTo(avatar.renderTarget); if (gap > 12) avatar.root.position.copy(avatar.renderTarget); else avatar.root.position.lerp(avatar.renderTarget, 1 - Math.exp(-dt * 11)); let delta = avatar.rotation - avatar.root.rotation.y; delta = Math.atan2(Math.sin(delta), Math.cos(delta)); avatar.root.rotation.y += delta * (1 - Math.exp(-dt * 10)); const t = now * .008, movingRemote = avatar.pose === "walk" || avatar.pose === "run", swimmingRemote = avatar.pose.startsWith("swim") || avatar.pose === "underwater", a = avatar.anim; const strideRemote = movingRemote ? Math.sin(t * (avatar.pose === "run" ? 1.7 : 1)) * .65 : 0; avatar.leftLeg.rotation.x = THREE.MathUtils.lerp(avatar.leftLeg.rotation.x, avatar.pose === "downed" ? -1.05 : a ? a[2] : swimmingRemote ? .35 + Math.sin(t) * .35 : -strideRemote, .32); avatar.rightLeg.rotation.x = THREE.MathUtils.lerp(avatar.rightLeg.rotation.x, avatar.pose === "downed" ? -1.05 : a ? a[3] : swimmingRemote ? .35 - Math.sin(t) * .35 : strideRemote, .32); avatar.leftArm.rotation.x = THREE.MathUtils.lerp(avatar.leftArm.rotation.x, a ? a[0] : swimmingRemote ? .8 + Math.sin(t) * .5 : strideRemote, .32); avatar.rightArm.rotation.x = THREE.MathUtils.lerp(avatar.rightArm.rotation.x, a ? a[1] : swimmingRemote ? .8 - Math.sin(t) * .5 : -strideRemote, .32); avatar.model.rotation.x = THREE.MathUtils.lerp(avatar.model.rotation.x, avatar.pose === "downed" ? .32 : a ? a[4] : avatar.pose === "underwater" ? -1.18 : 0, .28); avatar.model.rotation.z = THREE.MathUtils.lerp(avatar.model.rotation.z, 0, .18); avatar.model.position.y = THREE.MathUtils.lerp(avatar.model.position.y, avatar.pose === "downed" ? -.42 : 0, .18); if (avatar.rockMesh && avatar.rockState?.state === "thrown") { const r = avatar.rockState, v = r.velocity; avatar.rockMesh.position.set(r.position[0] + v[0] * predictionSeconds, r.position[1] + v[1] * predictionSeconds - .5 * 15 * predictionSeconds * predictionSeconds, r.position[2] + v[2] * predictionSeconds); avatar.rockMesh.rotation.x += dt * 4; avatar.rockMesh.rotation.z += dt * 3; } }
@@ -597,36 +725,37 @@ export default function IslandGame() {
   const openChat = () => { document.exitPointerLock?.(); setChatOpen(v => !v); };
   const submitChat = () => { const message = chatInput.trim(); if (!message) return; chatSend.current(message); setChatInput(""); };
   const startOnline = async (action: "create" | "join" | "resume") => { setConnecting(true); setOnlineError(""); try { let session: OnlineSession; if (action === "resume" && savedSession) { session = savedSession; const check = await fetch(`/api/multiplayer?code=${session.code}&playerId=${session.playerId}`); if (!check.ok) throw new Error("ห้องเดิมหมดอายุแล้ว"); } else { const response = await fetch("/api/multiplayer", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, code: joinCode, name: playerName, appearance }) }); const data = await response.json() as { session?: OnlineSession; error?: string }; if (!response.ok || !data.session) throw new Error(data.error || "เชื่อมต่อไม่สำเร็จ"); session = data.session; } localStorage.setItem("echo-island-room", JSON.stringify(session)); localStorage.setItem("echo-island-name", playerName); setOnlineSession(session); setSavedSession(session); setOnlineSetup(false); setStarted(true); } catch (error) { setOnlineError(error instanceof Error ? error.message : "เชื่อมต่อไม่สำเร็จ"); } finally { setConnecting(false); } };
-  const swatches = (key: ColorKey, label: string) => { const bonus = key === "shirt" ? [0x151515, 0xffd23f, 0x53e4c1, 0xd83b8c].slice(0, progress.unlocks) : []; return <div className="look-row"><span>{label}{key === "shirt" && progress.unlocks > 0 ? ` • ปลดล็อก ${progress.unlocks}` : ""}</span><div>{[...LOOK_OPTIONS[key], ...bonus].map(color => <button key={color} className={appearance[key] === color ? "selected" : ""} style={{ backgroundColor: `#${color.toString(16).padStart(6, "0")}` }} onClick={() => setAppearance(a => ({ ...a, [key]: color }))} aria-label={`${label} ${color.toString(16)}`} />)}</div></div> };
-  const shapeSlider = (key: "height" | "build" | "muscle", label: string, left: string, right: string) => <label className="shape-slider"><span><b>{label}</b><small>{Math.round(appearance[key] * 100)}%</small></span><div><em>{left}</em><input type="range" min="0" max="100" value={Math.round(appearance[key] * 100)} onChange={e => setAppearance(a => ({ ...a, [key]: Number(e.target.value) / 100 }))} /><em>{right}</em></div></label>;
+  const t = (value: string) => translate(value, language);
+  const swatches = (key: ColorKey, label: string) => { const bonus = key === "shirt" ? [0x151515, 0xffd23f, 0x53e4c1, 0xd83b8c].slice(0, progress.unlocks) : []; return <div className="look-row"><span>{t(label)}{key === "shirt" && progress.unlocks > 0 ? ` • ${t("ปลดล็อก")} ${progress.unlocks}` : ""}</span><div>{[...LOOK_OPTIONS[key], ...bonus].map(color => <button key={color} className={appearance[key] === color ? "selected" : ""} style={{ backgroundColor: `#${color.toString(16).padStart(6, "0")}` }} onClick={() => setAppearance(a => ({ ...a, [key]: color }))} aria-label={`${t(label)} ${color.toString(16)}`} />)}</div></div> };
+  const shapeSlider = (key: "height" | "build" | "muscle", label: string, left: string, right: string) => <label className="shape-slider"><span><b>{t(label)}</b><small>{Math.round(appearance[key] * 100)}%</small></span><div><em>{t(left)}</em><input type="range" min="0" max="100" value={Math.round(appearance[key] * 100)} onChange={e => setAppearance(a => ({ ...a, [key]: Number(e.target.value) / 100 }))} /><em>{t(right)}</em></div></label>;
   const hours = Math.floor((hud.time * 24 + 5) % 24), mins = Math.floor((((hud.time * 24 + 5) % 24) % 1) * 60);
   return <main className="game-shell">
-    <div ref={mount} className="viewport" aria-label="เกมสามมิติ Echo Island" />
+    <div ref={mount} className="viewport" aria-label={t("เกมสามมิติ Echo Island")} />
     <div className="grain" />
-    <header className="topbar"><div className="brand"><span className="brand-mark">E</span><div><strong>ECHO ISLAND</strong><small>เกาะที่จดจำคุณ</small></div></div><div className="top-actions">{started && onlineSession && <><button className={`icon-btn voice-btn ${voiceEnabled ? "active" : ""}`} onClick={() => voiceToggle.current()} aria-label={voiceEnabled ? "ปิดไมโครโฟน" : "เปิดเสียงตามระยะ"}>{voiceEnabled ? "🎙" : "🔇"}</button><button className={`icon-btn ${chatOpen ? "active" : ""}`} onClick={openChat} aria-label="เปิดแชต">💬</button></>}<button className="icon-btn" onClick={openWardrobe} aria-label="ปรับแต่งตัวละคร">♙</button><button className="icon-btn" onClick={() => setShowHelp(true)} aria-label="วิธีเล่น">?</button></div></header>
+    <header className="topbar"><div className="brand"><span className="brand-mark">E</span><div><strong>ECHO ISLAND</strong><small>{t("เกาะที่จดจำคุณ")}</small></div></div><div className="top-actions">{started && onlineSession && <><button className={`icon-btn voice-btn ${voiceEnabled ? "active" : ""}`} onClick={() => voiceToggle.current()} aria-label={voiceEnabled ? t("ปิดไมโครโฟน") : t("เปิดเสียงตามระยะ")}>{voiceEnabled ? "🎙" : "🔇"}</button><button className={`icon-btn ${chatOpen ? "active" : ""}`} onClick={openChat} aria-label={t("เปิดแชต")}>💬</button></>}<button className="icon-btn" onClick={openWardrobe} aria-label={t("ปรับแต่งตัวละคร")}>♙</button><button className="icon-btn" onClick={() => setShowHelp(true)} aria-label={t("วิธีเล่น")}>?</button></div></header>
     {voiceError && <div className="voice-error" onClick={() => setVoiceError("")}>{voiceError}</div>}
-    {started && onlineSession && chatOpen && <section className="room-chat"><header><b>แชตห้อง {onlineSession.code}</b><button onClick={() => setChatOpen(false)}>×</button></header><div className="chat-log">{chatMessages.length === 0 && <small>ยังไม่มีข้อความ เริ่มคุยกับเพื่อนได้เลย</small>}{chatMessages.map(m => <p key={m.id} className={m.playerId === onlineSession.playerId ? "mine" : ""}><strong>{m.name}</strong><span>{m.message}</span></p>)}</div><form onSubmit={e => { e.preventDefault(); submitChat(); }}><input autoFocus value={chatInput} maxLength={180} placeholder="พิมพ์แผนหรือข้อความถึงเพื่อน…" onChange={e => setChatInput(e.target.value)} /><button type="submit">ส่ง</button></form></section>}
+    {started && onlineSession && chatOpen && <section className="room-chat"><header><b>{t("แชตห้อง")} {onlineSession.code}</b><button onClick={() => setChatOpen(false)}>×</button></header><div className="chat-log">{chatMessages.length === 0 && <small>{t("ยังไม่มีข้อความ เริ่มคุยกับเพื่อนได้เลย")}</small>}{chatMessages.map(m => <p key={m.id} className={m.playerId === onlineSession.playerId ? "mine" : ""}><strong>{m.name}</strong><span>{m.message}</span></p>)}</div><form onSubmit={e => { e.preventDefault(); submitChat(); }}><input autoFocus value={chatInput} maxLength={180} placeholder={t("พิมพ์แผนหรือข้อความถึงเพื่อน…")} onChange={e => setChatInput(e.target.value)} /><button type="submit">{t("ส่ง")}</button></form></section>}
     {started && !end && <>
-      <section className="mission"><span>{onlineSession ? <>ห้อง {onlineSession.code} • {hud.onlineCount}/4 คน <button className="copy-code" onClick={() => navigator.clipboard?.writeText(onlineSession.code)}>คัดลอกรหัส</button></> : "ภารกิจต่อเนื่อง"}</span><strong>{hud.quest}</strong><div className="progress-row"><i style={{ width: `${hud.questProgress}%` }} /></div></section>
-      <section className="legacy"><b>LV.{progress.level}</b><span>✦ {progress.coins} เหรียญ</span><small>XP {progress.xp % 100}/100</small><em>{randomQuest}</em><i>{progress.achievements.length} ความสำเร็จ • ความลับ {progress.secrets}/4 • ปลดล็อก {progress.unlocks}</i></section>
-      <section className="stats"><div className="vitals"><div className="health"><b>พลังชีวิต</b><span>{Math.round(hud.health)}</span><i><em style={{ width: `${hud.health}%` }} /></i></div>{hud.inWater && <div className="oxygen"><b>ออกซิเจน</b><span>{hud.oxygen}</span><i><em style={{ width: `${hud.oxygen}%` }} /></i></div>}</div><div className="time"><small>{hours >= 18 || hours < 6 ? "กลางคืน" : "กลางวัน"}</small><strong>{String(hours).padStart(2, "0")}:{String(mins).padStart(2, "0")}</strong></div></section>
-      <section className="inventory"><div><span className="resource scrap">◆</span><p><b>{hud.scrap}</b><small>โลหะ</small></p></div><div><span className="resource cell">◉</span><p><b>{hud.cells}</b><small>เซลล์</small></p></div><div><span className="resource">▰</span><p><b>{hud.wood}</b><small>ไม้</small></p></div><div><span className="resource">⬟</span><p><b>{hud.stone}</b><small>หิน</small></p></div></section>
-      <section className="minimap"><b>แผนที่สำรวจ</b><div>{(() => { const marker = minimapPosition(hud.mapX, hud.mapZ); return <><i className="island one" /><i className="island two" /><i className="bridge-dot" /><i className="player-dot" aria-label="ทิศทางการเคลื่อนที่" style={{ left: `${marker.x / 190 * 100}%`, top: `${marker.z / 76 * 100}%`, transform: `translate(-50%, -50%) rotate(${hud.mapRotation}deg)` }} /></>; })()}<span>ค้นพบ {hud.discoveries}/6 • หีบ {hud.treasure}/3</span></div></section>
-      <div className="message">{hud.message}</div>
-      {hud.nearTower && <button className="interact" onClick={() => repair.current()}><kbd>E</kbd><span>ซ่อมหอส่งสัญญาณ</span></button>}
-      {carryingRock && <div className={`aim-reticle ${aimingRock ? "active" : ""}`}><i /><span>{aimingRock ? "ปล่อยเมาส์ขวาเพื่อยกเลิก • คลิกซ้ายเพื่อโยนแรง" : "กดเมาส์ขวาค้างเพื่อเล็ง"}</span></div>}
-      <div className="desktop-hint"><kbd>WASD</kbd> เคลื่อนที่ <span>•</span> <kbd>G</kbd> ประตูดันเจี้ยน <span>•</span> <kbd>V</kbd> สร้างกำแพงฐาน <span>•</span> <kbd>L</kbd> บันไดป้อม <span>•</span> <kbd>B</kbd> ใช้กระเป๋า</div>
-      <div className="mobile-controls"><div className="dpad"><button onPointerDown={() => press("KeyW", true)} onPointerUp={() => press("KeyW", false)}>▲</button><button onPointerDown={() => press("KeyA", true)} onPointerUp={() => press("KeyA", false)}>◀</button><button onPointerDown={() => press("KeyS", true)} onPointerUp={() => press("KeyS", false)}>▼</button><button onPointerDown={() => press("KeyD", true)} onPointerUp={() => press("KeyD", false)}>▶</button></div><button className="jump" onPointerDown={() => press("Space", true)} onPointerUp={() => press("Space", false)}>{hud.inWater ? "ขึ้น" : "โดด"}</button><button className="run" onPointerDown={() => press("ShiftLeft", true)} onPointerUp={() => press("ShiftLeft", false)}>{hud.inWater ? "เร็ว" : "วิ่ง"}</button><button className="dive" onPointerDown={() => press("KeyC", true)} onPointerUp={() => press("KeyC", false)}>ดำน้ำ</button><button className="rock-action" onPointerDown={() => rockAction.current()}>{carryingRock ? "โยน" : "ยกหิน"}</button></div>
+      <section className="mission"><span>{onlineSession ? <>{t("ห้อง")} {onlineSession.code} • {hud.onlineCount}/4 {t("คน")} <button className="copy-code" onClick={() => navigator.clipboard?.writeText(onlineSession.code)}>{t("คัดลอกรหัส")}</button></> : t("ภารกิจต่อเนื่อง")}</span><strong>{t(hud.quest)}</strong><div className="progress-row"><i style={{ width: `${hud.questProgress}%` }} /></div></section>
+      <section className="legacy"><b>LV.{progress.level}</b><span>✦ {progress.coins} {language==="ja"?"コイン":"เหรียญ"}</span><small>XP {progress.xp % 100}/100</small><em>{t(randomQuest)}</em><i>{language==="ja"?`${progress.achievements.length} 実績 • 秘密 ${progress.secrets}/4 • 解放 ${progress.unlocks}`:`${progress.achievements.length} ความสำเร็จ • ความลับ ${progress.secrets}/4 • ปลดล็อก ${progress.unlocks}`}</i></section>
+      <section className="stats"><div className="vitals"><div className="health"><b>{t("พลังชีวิต")}</b><span>{Math.round(hud.health)}</span><i><em style={{ width: `${hud.health}%` }} /></i></div>{hud.inWater && <div className="oxygen"><b>{t("ออกซิเจน")}</b><span>{hud.oxygen}</span><i><em style={{ width: `${hud.oxygen}%` }} /></i></div>}</div><div className="time"><small>{t(hours >= 18 || hours < 6 ? "กลางคืน" : "กลางวัน")}</small><strong>{String(hours).padStart(2, "0")}:{String(mins).padStart(2, "0")}</strong></div></section>
+      <section className="inventory"><div><span className="resource scrap">◆</span><p><b>{hud.scrap}</b><small>{t("โลหะ")}</small></p></div><div><span className="resource cell">◉</span><p><b>{hud.cells}</b><small>{t("เซลล์")}</small></p></div><div><span className="resource">▰</span><p><b>{hud.wood}</b><small>{t("ไม้")}</small></p></div><div><span className="resource">⬟</span><p><b>{hud.stone}</b><small>{t("หิน")}</small></p></div></section>
+      <section className="minimap"><b>{t("แผนที่สำรวจ")}</b><div>{(() => { const marker = minimapPosition(hud.mapX, hud.mapZ); return <><i className="island one" /><i className="island two" /><i className="bridge-dot" /><i className="player-dot" aria-label={t("ทิศทางการเคลื่อนที่")} style={{ left: `${marker.x / 190 * 100}%`, top: `${marker.z / 76 * 100}%`, transform: `translate(-50%, -50%) rotate(${hud.mapRotation}deg)` }} /></>; })()}<span>{language==="ja"?`発見 ${hud.discoveries}/6 • 宝箱 ${hud.treasure}/3`:`ค้นพบ ${hud.discoveries}/6 • หีบ ${hud.treasure}/3`}</span></div></section>
+      <div className="message">{t(hud.message)}</div>
+      {hud.nearTower && <button className="interact" onClick={() => repair.current()}><kbd>E</kbd><span>{t("ซ่อมหอส่งสัญญาณ")}</span></button>}
+      {carryingRock && <div className={`aim-reticle ${aimingRock ? "active" : ""}`}><i /><span>{t(aimingRock ? "ปล่อยเมาส์ขวาเพื่อยกเลิก • คลิกซ้ายเพื่อโยนแรง" : "กดเมาส์ขวาค้างเพื่อเล็ง")}</span></div>}
+      <div className="desktop-hint"><kbd>WASD</kbd> {t("เคลื่อนที่")} <span>•</span> <kbd>G</kbd> {t("ประตูดันเจี้ยน")} <span>•</span> <kbd>V</kbd> {t("สร้างกำแพงฐาน")} <span>•</span> <kbd>L</kbd> {t("บันไดป้อม")} <span>•</span> <kbd>B</kbd> {t("ใช้กระเป๋า")}</div>
+      <div className="mobile-controls"><div className="dpad"><button onPointerDown={() => press("KeyW", true)} onPointerUp={() => press("KeyW", false)}>▲</button><button onPointerDown={() => press("KeyA", true)} onPointerUp={() => press("KeyA", false)}>◀</button><button onPointerDown={() => press("KeyS", true)} onPointerUp={() => press("KeyS", false)}>▼</button><button onPointerDown={() => press("KeyD", true)} onPointerUp={() => press("KeyD", false)}>▶</button></div><button className="jump" onPointerDown={() => press("Space", true)} onPointerUp={() => press("Space", false)}>{t(hud.inWater ? "ขึ้น" : "โดด")}</button><button className="run" onPointerDown={() => press("ShiftLeft", true)} onPointerUp={() => press("ShiftLeft", false)}>{t(hud.inWater ? "เร็ว" : "วิ่ง")}</button><button className="dive" onPointerDown={() => press("KeyC", true)} onPointerUp={() => press("KeyC", false)}>{t("ดำน้ำ")}</button><button className="rock-action" onPointerDown={() => rockAction.current()}>{t(carryingRock ? "โยน" : "ยกหิน")}</button></div>
     </>}
-    {!started&&!onlineSetup&&<div className="overlay"><div className="hero-card"><div className="eyebrow">3D SURVIVAL ADVENTURE</div><h1>เกาะนี้<br/><em>จดจำคุณ</em></h1><p>เรือของคุณอับปางกลางพายุ หอส่งสัญญาณเก่าคือความหวังเดียว — แต่เมื่อดวงอาทิตย์ลับขอบฟ้า บางสิ่งบนเกาะจะเริ่มตามล่า</p><div className="goal"><span>ภารกิจ</span><b>รวบรวมไม้ {previewQuest.wood} และหิน {previewQuest.stone} เพื่อสร้างแพ</b></div><div className="start-actions triple"><button className="secondary" onClick={openWardrobe}>ปรับแต่ง</button><button className="secondary online" onClick={()=>setOnlineSetup(true)}>เล่นออนไลน์</button><button className="primary" onClick={()=>setStarted(true)}>เล่นคนเดียว <span>→</span></button></div>{savedSession&&<button className="resume-room" onClick={()=>startOnline("resume")} disabled={connecting}>กลับเข้าห้อง {savedSession.code}</button>}<small>ออนไลน์รองรับห้องส่วนตัวสูงสุด 4 คน</small></div></div>}
+    {!started&&!onlineSetup&&<div className="overlay"><div className="hero-card"><label className="language-picker">言語 / ภาษา<select value={language} onChange={e=>setLanguage(e.target.value as Language)}><option value="th">ไทย</option><option value="ja">日本語</option></select></label><div className="eyebrow">3D SURVIVAL ADVENTURE</div><h1>{language==="ja"?"この島は":"เกาะนี้"}<br/><em>{language==="ja"?"あなたを覚えている":"จดจำคุณ"}</em></h1><p>{language==="ja"?"嵐で船が難破した。古い通信塔だけが希望だ。しかし日が沈むと、島の何かがあなたを追い始める。":"เรือของคุณอับปางกลางพายุ หอส่งสัญญาณเก่าคือความหวังเดียว — แต่เมื่อดวงอาทิตย์ลับขอบฟ้า บางสิ่งบนเกาะจะเริ่มตามล่า"}</p><div className="goal"><span>{t("ภารกิจ")}</span><b>{language==="ja"?`木材 ${previewQuest.wood} と石 ${previewQuest.stone} を集めていかだを作る`:`รวบรวมไม้ ${previewQuest.wood} และหิน ${previewQuest.stone} เพื่อสร้างแพ`}</b></div><div className="start-actions triple"><button className="secondary" onClick={openWardrobe}>{t("ปรับแต่ง")}</button><button className="secondary online" onClick={()=>setOnlineSetup(true)}>{t("เล่นออนไลน์")}</button><button className="primary" onClick={()=>setStarted(true)}>{t("เล่นคนเดียว")} <span>→</span></button></div>{savedSession&&<button className="resume-room" onClick={()=>startOnline("resume")} disabled={connecting}>{t("กลับเข้าห้อง")} {savedSession.code}</button>}<small>{t("ผู้เล่นสูงสุด 4 คน • รหัสห้องเป็นส่วนตัว")}</small></div></div>}
     {onlineSetup&&<div className="overlay"><div className="online-card"><button className="close-online" onClick={()=>setOnlineSetup(false)}>×</button><span className="eyebrow">PRIVATE CO-OP</span><h2>สำรวจเกาะกับเพื่อน</h2><p>สร้างห้องแล้วส่งรหัส 6 ตัวให้เพื่อน หรือกรอกรหัสที่ได้รับเพื่อเข้าร่วม</p><label>ชื่อผู้เล่น<input value={playerName} maxLength={18} onChange={e=>setPlayerName(e.target.value)}/></label><div className="online-actions"><button className="primary" disabled={connecting} onClick={()=>startOnline("create")}>สร้างห้องใหม่</button><div><input value={joinCode} maxLength={6} placeholder="รหัสห้อง" onChange={e=>setJoinCode(e.target.value.toUpperCase())}/><button className="secondary" disabled={connecting||joinCode.length<6} onClick={()=>startOnline("join")}>เข้าร่วม</button></div></div>{onlineError&&<div className="online-error">{onlineError}</div>}<small>{connecting?"กำลังเชื่อมต่อ…":"ผู้เล่นสูงสุด 4 คน • รหัสห้องเป็นส่วนตัว"}</small></div></div>}
     {end&&<div className="overlay"><div className={`end-card ${end}`}><span>{end==="won"?"SIGNAL RESTORED":"THE ISLAND REMEMBERS"}</span><h2>{end==="won"?"ส่งสัญญาณสำเร็จ":"คุณหายไปในความมืด"}</h2><p>{end==="won"?"แสงสีเขียวพุ่งผ่านหมอก เสียงตอบรับจากแผ่นดินใหญ่ดังขึ้น — คุณรอดชีวิตจาก Echo Island":"เมื่อแสงแรกมาถึง ชายหาดว่างเปล่า เหลือเพียงรอยเท้าที่วนกลับไปยังป่า"}</p><button className="primary" onClick={restart}>เล่นอีกครั้ง <span>↻</span></button></div></div>}
     {showHelp&&<div className="overlay"><div className="help-card"><button onClick={()=>setShowHelp(false)}>×</button><span>คู่มือนักสำรวจ</span><h2>วิธีเอาชีวิตรอด</h2><ol><li><b>สำรวจเกาะ</b><small>วัตถุที่มีแสงเรืองคือทรัพยากร เดินเข้าใกล้เพื่อเก็บ ใช้ Space เพื่อกระโดดข้ามสิ่งกีดขวาง</small></li><li><b>ว่ายน้ำและดำน้ำ</b><small>กด Shift เพื่อว่ายเร็วที่ผิวน้ำ กด C เพื่อดำน้ำ และกด Shift พร้อม C เพื่อว่ายเร็วใต้น้ำ กด Space เพื่อกลับขึ้นผิวน้ำ ระวังออกซิเจนหมดเพราะอาจจมน้ำได้</small></li><li><b>ใช้ก้อนหิน</b><small>เข้าใกล้หินก้อนเล็กแล้วกด F เพื่อยก คลิกซ้ายเพื่อโยน หรือกดเมาส์ขวาค้างเพื่อเล็งก่อนโยน หินทำให้เงามืดชะงักได้</small></li><li><b>เตรียมก่อนค่ำ</b><small>เงามืดแข็งแกร่งในเวลากลางคืน วิ่งหนีและรักษาระยะห่าง</small></li><li><b>กลับไปยังหอคอย</b><small>เมื่อมีเศษโลหะ 6 ชิ้นและเซลล์ 3 ก้อน กด E ที่แผงควบคุม</small></li></ol><button className="primary" onClick={()=>setShowHelp(false)}>เข้าใจแล้ว</button></div></div>}
-    {customizing&&<div className="overlay wardrobe-overlay"><CharacterPreview appearance={appearance}/><section className="wardrobe"><button className="close" onClick={()=>setCustomizing(false)}>×</button><div className="eyebrow">EXPLORER LOADOUT</div><h2>ปรับแต่งนักสำรวจ</h2><p>เลือกรูปลักษณ์และสรีระ การเปลี่ยนแปลงจะแสดงบนตัวละครและบันทึกโดยอัตโนมัติ</p><div className="shape-list">{shapeSlider("height","ความสูง","เตี้ย","สูง")}{shapeSlider("build","รูปร่าง","ผอม","อ้วน")}{shapeSlider("muscle","กล้ามเนื้อ","ธรรมดา","กำยำ")}</div><div className="look-list">{swatches("skin","สีผิว")}{swatches("shirt","เสื้อเดินป่า")}{swatches("pants","กางเกง")}{swatches("pack","กระเป๋า")}{swatches("hair","สีผม")}</div><div className="wardrobe-actions"><button className="reset-look" onClick={()=>setAppearance(DEFAULT_LOOK)}>คืนค่าเดิม</button><button className="primary" onClick={()=>setCustomizing(false)}>เสร็จเรียบร้อย <span>✓</span></button></div></section></div>}
+    {customizing&&<div className="overlay wardrobe-overlay"><CharacterPreview appearance={appearance} language={language}/><section className="wardrobe"><button className="close" onClick={()=>setCustomizing(false)}>×</button><div className="eyebrow">EXPLORER LOADOUT</div><h2>{t("ปรับแต่งนักสำรวจ")}</h2><p>{t("เลือกรูปลักษณ์และสรีระ การเปลี่ยนแปลงจะแสดงบนตัวละครและบันทึกโดยอัตโนมัติ")}</p><div className="shape-list">{shapeSlider("height","ความสูง","เตี้ย","สูง")}{shapeSlider("build","รูปร่าง","ผอม","อ้วน")}{shapeSlider("muscle","กล้ามเนื้อ","ธรรมดา","กำยำ")}</div><div className="look-list">{swatches("skin","สีผิว")}{swatches("shirt","เสื้อเดินป่า")}{swatches("pants","กางเกง")}{swatches("pack","กระเป๋า")}{swatches("hair","สีผม")}</div><div className="wardrobe-actions"><button className="reset-look" onClick={()=>setAppearance(DEFAULT_LOOK)}>{t("คืนค่าเดิม")}</button><button className="primary" onClick={()=>setCustomizing(false)}>{t("เสร็จเรียบร้อย")} <span>✓</span></button></div></section></div>}
   </main>;
 }
 
-function CharacterPreview({appearance}:{appearance:Appearance}){
+function CharacterPreview({appearance,language}:{appearance:Appearance;language:Language}){
   const mount=useRef<HTMLDivElement>(null);
   const appearanceRef=useRef(appearance);
   appearanceRef.current=appearance;
@@ -651,5 +780,5 @@ function CharacterPreview({appearance}:{appearance:Appearance}){
     let raf=0;const start=performance.now();const draw=()=>{const t=(performance.now()-start)/1000,look=appearanceRef.current,nextWidth=.78+look.build*.5,nextHeight=.82+look.height*.38,nextArmScale=.82+look.muscle*.55;skin.color.setHex(look.skin);shirt.color.setHex(look.shirt);pants.color.setHex(look.pants);packMat.color.setHex(look.pack);hairMat.color.setHex(look.hair);player.scale.set(nextWidth,nextHeight,nextWidth);torso.scale.set(1+look.muscle*.18,1,1+look.muscle*.18);la.scale.set(nextArmScale,1,nextArmScale);ra.scale.set(nextArmScale,1,nextArmScale);la.position.x=-(.48+look.build*.11+look.muscle*.07);ra.position.x=-la.position.x;player.rotation.y=Math.sin(t*.55)*.55;player.position.y=Math.sin(t*1.4)*.025;renderer.render(scene,camera);raf=requestAnimationFrame(draw)};draw();
     return()=>{cancelAnimationFrame(raf);ro.disconnect();renderer.dispose();host.innerHTML="";};
   },[]);
-  return <div ref={mount} className="wardrobe-preview"><div><span>ตัวอย่างสด</span><small>โมเดลจะหมุนเพื่อดูด้านหน้าและกระเป๋า</small></div></div>;
+  return <div ref={mount} className="wardrobe-preview"><div><span>{language==="ja"?"ライブプレビュー":"ตัวอย่างสด"}</span><small>{language==="ja"?"モデルが回転して正面とバックパックを確認できます":"โมเดลจะหมุนเพื่อดูด้านหน้าและกระเป๋า"}</small></div></div>;
 }
