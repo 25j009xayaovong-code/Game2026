@@ -6,7 +6,8 @@ import * as THREE from "three";
 type Hud = { health: number; oxygen: number; inWater: boolean; scrap: number; cells: number; wood:number; stone:number; treasure:number; discoveries:number; mapX:number; mapZ:number; mapRotation:number; quest:string; questProgress:number; time: number; message: string; nearTower: boolean; onlineCount: number };
 type Progress={coins:number;xp:number;level:number;runs:number;unlocks:number;achievements:string[];secrets:number;bestDiscoveries:number};
 type ColorKey="skin"|"shirt"|"pants"|"pack"|"hair";
-type Appearance = Record<ColorKey,number>&{height:number;build:number;muscle:number};
+type CharacterStyle="explorer"|"blocky";
+type Appearance = Record<ColorKey,number>&{height:number;build:number;muscle:number;character?:CharacterStyle};
 type OnlineSession={code:string;playerId:string;token:string};
 type OnlineRock={id:number;state:"held"|"thrown"|"rest";radius:number;scale:[number,number,number];position:[number,number,number];velocity:[number,number,number]};
 type OnlinePlayer={id:string;name:string;appearance:Appearance;x:number;y:number;z:number;rotation:number;pose:string;anim:[number,number,number,number,number]|null;rock:OnlineRock|null;updatedAt:number};
@@ -15,6 +16,122 @@ type VoiceSignal={id:number;fromId:string;payload:{type:"offer"|"answer"|"candid
 type ChatMessage={id:number;playerId:string;name:string;message:string;createdAt:number};
 type OnlineState={room:{code:string;scrap:number;cells:number;won:boolean;time:number;serverNow:number};players:OnlinePlayer[];collected:number[];signals?:VoiceSignal[];messages?:ChatMessage[]};
 type CollectionQuest={wood:number;stone:number;treasure:number;discoveries:number;scrap:number;cells:number};
+type Language="th"|"ja";
+const TRANSLATIONS:Record<string,string>={
+  "เกาะที่จดจำคุณ":"あなたを覚えている島",
+  "เกมสามมิติ Echo Island":"Echo Island 3Dゲーム",
+  "ปิดไมโครโฟน":"マイクをオフ",
+  "เปิดเสียงตามระยะ":"近距離ボイスをオン",
+  "เปิดแชต":"チャットを開く",
+  "ปรับแต่งตัวละคร":"キャラクターをカスタマイズ",
+  "วิธีเล่น":"遊び方",
+  "แชตห้อง":"ルームチャット",
+  "ยังไม่มีข้อความ เริ่มคุยกับเพื่อนๆได้เลย":"まだメッセージがありません。友達と話してみましょう",
+  "พิมพ์แผนหรือข้อความถึงเพื่อน…":"計画やメッセージを入力…",
+  "ส่ง":"送信",
+  "คัดลอกรหัส":"コードをコピー",
+  "พลังชีวิต":"体力",
+  "ออกซิเจน":"酸素",
+  "กลางคืน":"夜",
+  "กลางวัน":"昼",
+  "โลหะ":"金属",
+  "เซลล์":"セル",
+  "ไม้":"木材",
+  "หิน":"石",
+  "แผนที่สำรวจ":"探索マップ",
+  "ทิศทางการเคลื่อนที่":"移動方向",
+  "ซ่อมหอส่งสัญญาณ":"通信塔を修理",
+  "ปล่อยเมาส์ขวาเพื่อยกเลิก • คลิกซ้ายเพื่อโยนแรง":"右クリックを離してキャンセル • 左クリックで強く投げる",
+  "กดเมาส์ขวาค้างเพื่อเล็ง":"右クリック長押しで狙う",
+  "เคลื่อนที่":"移動",
+  "ประตูดันเจี้ยน":"ダンジョンの扉",
+  "สร้างกำแพงฐาน":"拠点の壁を作る",
+  "รวบรวมไม้ 4 และหิน 3 เพื่อสร้างแพ":"木材4個と石3個を集めていかだを作る",
+  "สำรวจสองเกาะ ป้อมปราการ และหอสังเกตการณ์":"2つの島、要塞、見張り台を探索する",
+  "เคลื่อนที่":"移動",
+  "ประตูดันเจี้ยน":"ダンジョンの扉",
+  "บันไดป้อม":"要塞のはしご",
+  "ใช้กระเป๋า":"バックパックを使う",
+  "ขึ้น":"上昇",
+  "โดด":"ジャンプ",
+  "เร็ว":"速く泳ぐ",
+  "วิ่ง":"走る",
+  "ดำน้ำ":"潜水",
+  "โยน":"投げる",
+  "ยกหิน":"石を拾う",
+  "บันไดป้อม":"要塞のはしご",
+  "ใช้กระเป๋า":"バックパックを使う",
+  "ขึ้น":"上昇",
+  "โดด":"ジャンプ",
+  "เร็ว":"速く泳ぐ",
+  "วิ่ง":"走る",
+  "ดำน้ำ":"潜水",
+  "โยน":"投げる",
+  "ยกหิน":"石を拾う",
+  "ภารกิจ":"ミッション",
+  "ปรับแต่ง":"カスタマイズ",
+  "เล่นออนไลน์":"オンラインで遊ぶ",
+  "เล่นคนเดียว":"一人で遊ぶ",
+  "สร้างห้องใหม่":"新しいルームを作成",
+  "เข้าร่วม":"参加",
+  "ชื่อผู้เล่น":"プレイヤー名",
+  "รหัสห้อง":"ルームコード",
+  "กำลังเชื่อมต่อ…":"接続中…",
+  "ผู้เล่นสูงสุด 4 คน • รหัสห้องเป็นส่วนตัว":"最大4人 • ルームコードは非公開",
+  "กลับเข้าห้อง":"ルームに戻る",
+  "เล่นอีกครั้ง":"もう一度遊ぶ",
+  "คู่มือนักสำรวจ":"探検家ガイド",
+  "วิธีเอาชีวิตรอด":"生き残る方法",
+  "เข้าใจแล้ว":"わかりました",
+  "ปรับแต่งนักสำรวจ":"探検家をカスタマイズ",
+  "เลือกรูปลักษณ์และสรีระ การเปลี่ยนแปลงจะแสดงบนตัวละครและบันทึกโดยอัตโนมัติ":"外見と体格を選べます。変更はキャラクターに反映され、自動的に保存されます",
+  "ความสูง":"身長",
+  "รูปร่าง":"体格",
+  "กล้ามเนื้อ":"筋肉",
+  "เตี้ย":"低い",
+  "สูง":"高い",
+  "ผอม":"細身",
+  "อ้วน":"大柄",
+  "ธรรมดา":"普通",
+  "กำยำ":"たくましい",
+  "สีผิว":"肌の色",
+  "เสื้อเดินป่า":"探検服",
+  "กางเกง":"ズボン",
+  "กระเป๋า":"バックパック",
+  "สีผม":"髪色",
+  "ปลดล็อก":"解放",
+  "คืนค่าเดิม":"初期設定に戻す",
+  "เสร็จเรียบร้อย":"完了",
+  "ตัวอย่างสด":"ライブプレビュー",
+  "โมเดลจะหมุนเพื่อดูด้านหน้าและกระเป๋า":"モデルが回転して正面とバックパックを確認できます",
+  "ภารกิจต่อเนื่อง":"継続ミッション",
+  "ห้อง":"ルーム",
+  "คน":"人",
+  "คัดลอกรหัส":"コードをコピー",
+  "กด Q เพื่อคราฟต์แพ":"Qキーでいかだを作る",
+  "ซ่อมหอส่งสัญญาณและเอาชีวิตรอด":"通信塔を修理して生き残る",
+  "ค้นหาหีบสมบัติที่ซ่อนอยู่ทั้ง 3 ใบ":"隠された宝箱を3個探す",
+  "ค้นพบสถานที่สำคัญบนแผนที่ 6 แห่ง":"マップ上の重要地点を6か所発見する",
+  "ค้นหาความลับ 2 จุด":"秘密の場所を2か所探す",
+  "ทำให้ซอมบี้ล้ม 3 ตัว":"ゾンビを3体倒す",
+  "สำรวจสถานที่ 4 แห่ง":"4か所を探索する",
+  "สร้างกำแพงฐาน 2 ชิ้น":"拠点の壁を2枚作る",
+};
+const translate=(value:string,language:Language)=>{
+  if(language==="th")return value;
+  if(TRANSLATIONS[value])return TRANSLATIONS[value];
+  const raft=value.match(/^รวบรวมไม้ (\d+) และหิน (\d+) เพื่อสร้างแพ$/);
+  if(raft)return `木材${raft[1]}個と石${raft[2]}個を集めていかだを作る`;
+  const treasure=value.match(/^ค้นหาหีบสมบัติที่ซ่อนอยู่ทั้ง (\d+) ใบ$/);
+  if(treasure)return `隠された宝箱を${treasure[1]}個探す`;
+  const discoveries=value.match(/^ค้นพบสถานที่สำคัญบนแผนที่ (\d+) แห่ง$/);
+  if(discoveries)return `マップ上の重要地点を${discoveries[1]}か所発見する`;
+  return value;
+};
+const lerpAngle=(current:number,target:number,amount:number)=>{
+  const delta=Math.atan2(Math.sin(target-current),Math.cos(target-current));
+  return current+delta*amount;
+};
 const randomInt=(min:number,max:number)=>min+Math.floor(Math.random()*(max-min+1));
 const collectionQuestFor=(seed?:string):CollectionQuest=>{
   if(!seed)return {wood:randomInt(2,6),stone:randomInt(2,5),treasure:randomInt(1,3),discoveries:randomInt(3,6),scrap:randomInt(3,6),cells:randomInt(1,3)};
@@ -30,7 +147,8 @@ const collectionQuestStatus=(quest:CollectionQuest,craftedRaft:boolean,wood:numb
 };
 const INITIAL: Hud = { health: 100, oxygen: 100, inWater: false, scrap: 0, cells: 0, wood:0,stone:0,treasure:0,discoveries:0,mapX:0,mapZ:90,mapRotation:0,quest:"ภารกิจรวบรวมทรัพยากรแบบสุ่ม",questProgress:0,time: 0.08, message: "ค้นหาชิ้นส่วนบนเกาะ", nearTower: false, onlineCount: 1 };
 const COLOR_KEYS:ColorKey[]=["skin","shirt","pants","pack","hair"];
-const DEFAULT_LOOK:Appearance={skin:0xe7c4a1,shirt:0xf1a447,pants:0x263e49,pack:0x304b51,hair:0x2b211d,height:.5,build:.45,muscle:.35};
+const DEFAULT_LOOK:Appearance={skin:0xe7c4a1,shirt:0xf1a447,pants:0x263e49,pack:0x304b51,hair:0x2b211d,height:.5,build:.45,muscle:.35,character:"explorer"};
+const BLOCKY_LOOK:Appearance={...DEFAULT_LOOK,skin:0xd99b72,shirt:0x3d8bd9,pants:0x263e49,pack:0x7d4d2b,hair:0x201713,character:"blocky"};
 const LOOK_OPTIONS={skin:[0xf4d2b5,0xe7c4a1,0xc98f65,0x8b5b3e,0x5c3828],shirt:[0xf1a447,0x4fb6a2,0xd85c51,0x5479c9,0xb479c8,0xe8d26f],pants:[0x263e49,0x25315b,0x564638,0x315844,0x5b3441],pack:[0x304b51,0x79543c,0x496a3d,0x9a654b,0x3e4269],hair:[0x191512,0x543322,0xa66a36,0xd6b36d,0x6b334d]};
 const SWAMP_X=-75,SWAMP_Z=95,SWAMP_RADIUS=38,SWAMP_WATER=.25,ISLAND_RADIUS=235,MAIN_BEACH_START=214,SECOND_X=470,SECOND_Z=0,SECOND_RADIUS=125,SECOND_BEACH_START=108,BRIDGE_Y=-.15,OCEAN_LEVEL=-5.2,WORLD_MIN_X=-300,WORLD_MAX_X=660,WORLD_Z_LIMIT=300;
 const MAZE_ZONES=[{x:-112,z:-104,half:29},{x:112,z:-104,half:29},{x:112,z:105,half:29}];
@@ -62,6 +180,9 @@ const surfaceHeight = (x: number, z: number) => { if (onBridge(x, z)) return BRI
 export default function IslandGame() {
   const mount = useRef<HTMLDivElement>(null);
   const keys = useRef<Record<string, boolean>>({});
+  const languageRef = useRef<Language>("th");
+  const languageEffectInitialized = useRef(false);
+  const [language, setLanguage] = useState<Language>("th");
   const [started, setStarted] = useState(false);
   const [hud, setHud] = useState(INITIAL);
   const [end, setEnd] = useState<"won" | "lost" | null>(null);
@@ -86,13 +207,22 @@ export default function IslandGame() {
   const [progress,setProgress]=useState<Progress>({coins:0,xp:0,level:1,runs:0,unlocks:0,achievements:[],secrets:0,bestDiscoveries:0});
   const progressRef=useRef(progress);
   const [previewQuest,setPreviewQuest]=useState<CollectionQuest>(()=>collectionQuestFor("solo-preview"));
-  const [randomQuest]=useState(()=>["ค้นหาความลับ 2 จุด","ทำให้ซอมบี้ล้ม 3 ตัว","สำรวจสถานที่ 4 แห่ง","สร้างกำแพงฐาน 2 ชิ้น"][Math.floor(Math.random()*4)]);
+  const [randomQuest]=useState("ค้นหาความลับ 2 จุด");
   const repair = useRef<() => void>(() => {});
   const rockAction = useRef<() => void>(() => {});
   const paused=useRef(false),appearanceRef=useRef(appearance),voiceToggle=useRef<()=>void>(()=>{}),chatSend=useRef<(message:string)=>void>(()=>{});
   const lookMaterials=useRef<Record<ColorKey,THREE.MeshStandardMaterial>|null>(null);
   const bodyShape=useRef<{player:THREE.Group;body:THREE.Mesh;leftArm:THREE.Group;rightArm:THREE.Group}|null>(null);
 
+  useEffect(()=>{
+    if(!languageEffectInitialized.current){
+      languageEffectInitialized.current=true;
+      try{if(localStorage.getItem("echo-island-language")==="ja"&&language==="th"){setLanguage("ja");return;}}catch{}
+    }
+    languageRef.current=language;
+    document.documentElement.lang=language;
+    try{localStorage.setItem("echo-island-language",language);}catch{}
+  },[language]);
   useEffect(()=>{try{const saved=localStorage.getItem("echo-island-look");if(saved)setAppearance({...DEFAULT_LOOK,...JSON.parse(saved)});}catch{}setLookLoaded(true);},[]);
   useEffect(()=>{try{const saved=localStorage.getItem("echo-island-room");if(saved)setSavedSession(JSON.parse(saved));const name=localStorage.getItem("echo-island-name");if(name)setPlayerName(name);}catch{}},[]);
   useEffect(()=>{try{const saved=localStorage.getItem("echo-island-progress");if(saved){const value={...progress,...JSON.parse(saved)};setProgress(value);progressRef.current=value;}}catch{}},[]);
@@ -160,7 +290,7 @@ export default function IslandGame() {
     const rand = (n: number) => { const x = Math.sin(n * 9283.31) * 43758.5; return x - Math.floor(x); };
     const insideMaze = (x: number, z: number) => MAZE_ZONES.some(m => Math.abs(x - m.x) < m.half + 5 && Math.abs(z - m.z) < m.half + 5);
     // Circular ground colliders keep movement inexpensive and reliable on desktop and mobile.
-    const colliders: { x: number; z: number; r: number }[] = [];
+    const colliders: { x: number; z: number; r: number; minY?: number; maxY?: number }[] = [];
     type ThrowableRock = { id: number; mesh: THREE.Mesh | null; velocity: THREE.Vector3 | null; held: boolean; radius: number; baseScale: THREE.Vector3; restPosition: THREE.Vector3; instanceIndex: number | null; collider: { x: number; z: number; r: number } | null };
     const throwableRocks: ThrowableRock[] = [];
     const rockMaterial = mat(0x65716b);
@@ -214,23 +344,71 @@ export default function IslandGame() {
     const OBS_X = SECOND_X + 18, OBS_Z = 12, obsGround = secondSurfaceHeight(OBS_X, OBS_Z), OBS_HEIGHT = 30;
     const obsStone = mat(0x46545a), obsWood = mat(0x9b6d3e), obsMetal = mat(0xd2b16c); addMesh(new THREE.CylinderGeometry(2.8, 3.6, OBS_HEIGHT, 10), obsStone, OBS_X, obsGround + OBS_HEIGHT / 2, OBS_Z); addMesh(new THREE.CylinderGeometry(6, 5.4, .8, 12), obsWood, OBS_X, obsGround + OBS_HEIGHT, OBS_Z); addMesh(new THREE.ConeGeometry(6.8, 3.4, 8), mat(0x8c4436), OBS_X, obsGround + 32.1, OBS_Z);
     for (const side of [-.72, .72]) addMesh(new THREE.BoxGeometry(.14, OBS_HEIGHT, .16), obsMetal, OBS_X + side, obsGround + OBS_HEIGHT / 2, OBS_Z - 3.05); for (let y = 1; y < OBS_HEIGHT; y += .75)addMesh(new THREE.BoxGeometry(1.6, .11, .18), obsMetal, OBS_X, obsGround + y, OBS_Z - 3.08); colliders.push({ x: OBS_X, z: OBS_Z, r: 2.4 });
-    // Five elevated wooden fortresses. Each has a dedicated ladder on its
+    // Six elevated wooden fortresses. Each has a dedicated ladder on its
     // south side and a broad, solid roof deck that players can stand on.
     type Fortress = { x: number; z: number; ground: number; height: number; radius: number; ladderZ: number };
     const fortresses: Fortress[] = [];
-    [[-178, -42], [172, 72], [-42, 178], [SECOND_X - 62, -68], [SECOND_X + 64, 52]].forEach(([x, z], i) => {
-      const heights = [52, 58, 55, 78, 60], onSecond = i >= 3, ground = onSecond ? secondSurfaceHeight(x, z) : surfaceHeight(x, z), height = heights[i], radius = 5.2, ladderZ = z - radius - .45; fortresses.push({ x, z, ground, height, radius, ladderZ });
-      const timber = mat(i % 2 ? 0x765035 : 0x67452f), stone = mat(0x59635c), banner = mat(i % 2 ? 0x2aa98f : 0xb85b42, .75);
+    const specialStairSteps: { x: number; z: number; y: number; r: number }[] = [];
+    const specialStairStart = .15, specialStairRise = .75;
+    const fortressPositions: [number, number][] = [[-178, -42], [172, 72], [-42, 178], [SECOND_X - 62, -68], [SECOND_X + 64, 52], [SECOND_X, -84]];
+    const bridgeLinks: [number, number][] = [[0, 1], [1, 2], [1, 4], [3, 4]];
+    const specialFortressHeight = 156;
+    fortressPositions.forEach(([x, z], i) => {
+      const heights = [52, 58, 55, 78, 60, specialFortressHeight], isSpecial = i === 5, onSecond = i >= 3, ground = onSecond ? secondSurfaceHeight(x, z) : surfaceHeight(x, z), height = heights[i], radius = isSpecial ? 10.5 : 5.2, ladderZ = z - radius - .45; fortresses.push({ x, z, ground, height, radius, ladderZ });
+      const timber = mat(isSpecial ? 0x8d5a24 : i % 2 ? 0x765035 : 0x67452f), stone = mat(isSpecial ? 0x8a8068 : 0x59635c), banner = mat(isSpecial ? 0xf1c453 : i % 2 ? 0x2aa98f : 0xb85b42, .75);
+      const bridgeAngles = bridgeLinks.flatMap(([fromIndex, toIndex]) => { if (fromIndex !== i && toIndex !== i) return []; const [targetX, targetZ] = fortressPositions[fromIndex === i ? toIndex : fromIndex]; return [Math.atan2(targetZ - z, targetX - x)]; });
       addMesh(new THREE.CylinderGeometry(radius, radius + .7, 1.1, 12), stone, x, ground + .5, z);
-      for (let p = 0; p < 12; p++) { const a = p / 12 * Math.PI * 2, px = x + Math.cos(a) * (radius - .25), pz = z + Math.sin(a) * (radius - .25); addMesh(new THREE.BoxGeometry(1.2, height, .8), timber, px, ground + height / 2, pz).rotation.y = -a; if (Math.abs(Math.atan2(Math.sin(a + Math.PI / 2), Math.cos(a + Math.PI / 2))) > .24) colliders.push({ x: px, z: pz, r: .75 }); }
+      for (let p = 0; p < 12; p++) { const a = p / 12 * Math.PI * 2, px = x + Math.cos(a) * (radius - .25), pz = z + Math.sin(a) * (radius - .25), southEntrance = Math.abs(Math.atan2(Math.sin(a + Math.PI / 2), Math.cos(a + Math.PI / 2))) < .24, bridgeEntrance = bridgeAngles.some(angle => Math.abs(Math.atan2(Math.sin(a - angle), Math.cos(a - angle))) < .3); if (!southEntrance && !bridgeEntrance) { addMesh(new THREE.BoxGeometry(1.2, height, .8), timber, px, ground + height / 2, pz).rotation.y = -a; colliders.push({ x: px, z: pz, r: .75 }); } }
       const deck = addMesh(new THREE.CylinderGeometry(radius + 1, radius + 1, .75, 12), timber, x, ground + height, z); deck.receiveShadow = !lowPower;
-      for (let p = 0; p < 12; p++) { const a = p / 12 * Math.PI * 2, px = x + Math.cos(a) * (radius + .15), pz = z + Math.sin(a) * (radius + .15); addMesh(new THREE.BoxGeometry(1.8, 1.5, .65), stone, px, ground + height + 1, pz).rotation.y = -a; if (Math.abs(Math.atan2(Math.sin(a + Math.PI / 2), Math.cos(a + Math.PI / 2))) > .24) colliders.push({ x: px, z: pz, r: .92 }); }
+      for (let p = 0; p < 12; p++) { const a = p / 12 * Math.PI * 2, px = x + Math.cos(a) * (radius + .15), pz = z + Math.sin(a) * (radius + .15), southEntrance = Math.abs(Math.atan2(Math.sin(a + Math.PI / 2), Math.cos(a + Math.PI / 2))) < .24, bridgeEntrance = bridgeAngles.some(angle => Math.abs(Math.atan2(Math.sin(a - angle), Math.cos(a - angle))) < .3); if (!southEntrance && !bridgeEntrance) { addMesh(new THREE.BoxGeometry(1.8, 1.5, .65), stone, px, ground + height + 1, pz).rotation.y = -a; colliders.push({ x: px, z: pz, r: .92 }); } }
       const flagPole = addMesh(new THREE.CylinderGeometry(.08, .1, 5, 6), stone, x, ground + height + 2.5, z); flagPole.castShadow = !lowPower; const flag = addMesh(new THREE.BoxGeometry(2.2, 1.15, .08), banner, x + 1.05, ground + height + 4, z); flag.rotation.y = i * .75;
-      for (const side of [-.7, .7]) addMesh(new THREE.BoxGeometry(.15, height + .4, .18), stone, x + side, ground + (height + .4) / 2, ladderZ);
-      for (let y = .8; y < height + .2; y += 1.45)addMesh(new THREE.BoxGeometry(1.55, .14, .2), stone, x, ground + y, ladderZ - .02);
+      if (isSpecial) {
+        const stairRadius = radius + 2.2, stairTurns = 3.5, stairCount = Math.ceil((height - specialStairStart) / specialStairRise);
+        for (let step = 0; step <= stairCount; step++) {
+          const stepHeight = Math.min(height, specialStairStart + step * specialStairRise), t = stepHeight / height, angle = -Math.PI / 2 + t * stairTurns * Math.PI * 2, stepY = ground + stepHeight;
+          const stepX = x + Math.cos(angle) * stairRadius, stepZ = z + Math.sin(angle) * stairRadius;
+          const stair = addMesh(new THREE.BoxGeometry(3.25, .24, 2.15), stone, stepX, stepY, stepZ);
+          stair.rotation.y = angle + Math.PI / 2;
+          specialStairSteps.push({ x: stepX, z: stepZ, y: stepY, r: 1.7 });
+          for (const railRadius of [stairRadius - 1.15, stairRadius + 1.15]) {
+            if (step % 4 === 0 || step === stairCount) {
+              const postX = x + Math.cos(angle) * railRadius, postZ = z + Math.sin(angle) * railRadius;
+              addMesh(new THREE.BoxGeometry(.14, 1.35, .14), timber, postX, stepY + .7, postZ);
+            }
+          }
+        }
+      } else {
+        for (const side of [-.7, .7]) addMesh(new THREE.BoxGeometry(.15, height + .4, .18), stone, x + side, ground + (height + .4) / 2, ladderZ);
+        for (let y = .8; y < height + .2; y += 1.45)addMesh(new THREE.BoxGeometry(1.55, .14, .2), stone, x, ground + y, ladderZ - .02);
+      }
       // The circular wall remains solid except at the ladder entrance.
-      for (let p = 0; p < 24; p++) { const a = p / 24 * Math.PI * 2; if (Math.abs(Math.atan2(Math.sin(a + Math.PI / 2), Math.cos(a + Math.PI / 2))) < .24) continue; colliders.push({ x: x + Math.cos(a) * radius, z: z + Math.sin(a) * radius, r: .52 }); }
+      for (let p = 0; p < 24; p++) { const a = p / 24 * Math.PI * 2, southEntrance = Math.abs(Math.atan2(Math.sin(a + Math.PI / 2), Math.cos(a + Math.PI / 2))) < .24, bridgeEntrance = bridgeAngles.some(angle => Math.abs(Math.atan2(Math.sin(a - angle), Math.cos(a - angle))) < .3); if (southEntrance || bridgeEntrance) continue; colliders.push({ x: x + Math.cos(a) * radius, z: z + Math.sin(a) * radius, r: .52 }); }
     });
+    type FortressBridge = { x1: number; z1: number; y1: number; x2: number; z2: number; y2: number; length: number; dx: number; dz: number };
+    const fortressBridges: FortressBridge[] = [];
+    const fortressBridgeDeck = mat(0x805735), fortressBridgeRail = mat(0x4f3524);
+    for (const [fromIndex, toIndex] of bridgeLinks) {
+      const from = fortresses[fromIndex], to = fortresses[toIndex], dx = to.x - from.x, dz = to.z - from.z, length = Math.hypot(dx, dz);
+      const bridge: FortressBridge = { x1: from.x, z1: from.z, y1: from.ground + from.height + .62, x2: to.x, z2: to.z, y2: to.ground + to.height + .62, length, dx, dz };
+      fortressBridges.push(bridge);
+      const midpoint = new THREE.Vector3((from.x + to.x) / 2, (bridge.y1 + bridge.y2) / 2 - .15, (from.z + to.z) / 2);
+      const direction = new THREE.Vector3(dx, bridge.y2 - bridge.y1, dz).normalize();
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(length, .3, 3.8), fortressBridgeDeck); deck.position.copy(midpoint); deck.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), direction); deck.castShadow = deck.receiveShadow = !lowPower; scene.add(deck);
+      for (const side of [-1, 1]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(length, .18, .18), fortressBridgeRail); rail.position.copy(midpoint).add(new THREE.Vector3(0, .95, 0)); rail.position.add(new THREE.Vector3(-direction.z * side * 1.82, 0, direction.x * side * 1.82)); rail.quaternion.copy(deck.quaternion); rail.castShadow = !lowPower; scene.add(rail);
+        for (let step = 0; step <= Math.ceil(length / 8); step++) {
+          const t = Math.min(1, step * 8 / length), post = new THREE.Mesh(new THREE.BoxGeometry(.16, 1.05, .16), fortressBridgeRail); post.position.set(THREE.MathUtils.lerp(from.x, to.x, t) - direction.z * side * 1.82, THREE.MathUtils.lerp(bridge.y1, bridge.y2, t) + .43, THREE.MathUtils.lerp(from.z, to.z, t) + direction.x * side * 1.82); post.castShadow = !lowPower; scene.add(post);
+        }
+      }
+    }
+    const fortressBridgeHeight = (x: number, z: number) => {
+      let best = -Infinity;
+      for (const bridge of fortressBridges) {
+        const lengthSq = bridge.length * bridge.length, t = THREE.MathUtils.clamp(((x - bridge.x1) * bridge.dx + (z - bridge.z1) * bridge.dz) / lengthSq, 0, 1), nearestX = bridge.x1 + bridge.dx * t, nearestZ = bridge.z1 + bridge.dz * t;
+        if (Math.hypot(x - nearestX, z - nearestZ) < 2.05) best = Math.max(best, THREE.MathUtils.lerp(bridge.y1, bridge.y2, t) - .12);
+      }
+      return best;
+    };
     // A three-floor underground dungeon beneath the main island. The glowing
     // stair seals move the player between floors without exposing the rooms
     // through the terrain above.
@@ -284,37 +462,43 @@ export default function IslandGame() {
 */
 
     const player=new THREE.Group(),model=new THREE.Group();scene.add(player);player.add(model);player.position.set(0,surfaceHeight(0,90),90);
-    const look=appearanceRef.current;
+    const look={...DEFAULT_LOOK,...appearanceRef.current};
+    const blocky=look.character==="blocky";
     const shirt=mat(look.shirt), skin=mat(look.skin), pants=mat(look.pants), packMat=mat(look.pack), hairMat=mat(look.hair), boot=mat(0x17262b);
     lookMaterials.current={shirt,skin,pants,pack:packMat,hair:hairMat};
-    const body=new THREE.Mesh(new THREE.CapsuleGeometry(.42,.62,5,8),shirt);body.position.y=1.27;body.castShadow=true;model.add(body);
-    const pack=new THREE.Mesh(new THREE.BoxGeometry(.62,.74,.34,3,3,2),packMat);pack.position.set(0,1.27,.42);pack.castShadow=true;model.add(pack);
-    const packFlap=new THREE.Mesh(new THREE.BoxGeometry(.54,.2,.1,2,2,1),packMat);packFlap.position.set(0,1.5,.62);packFlap.castShadow=true;model.add(packFlap);
+    const body=new THREE.Mesh(blocky?new THREE.BoxGeometry(.78,.92,.46):new THREE.CapsuleGeometry(.42,.62,5,8),shirt);body.position.y=1.27;body.castShadow=true;model.add(body);
+    const pack=new THREE.Mesh(new THREE.BoxGeometry(.62,.74,.34,3,3,2),packMat);pack.position.set(0,1.27,.42);pack.castShadow=true;pack.visible=!blocky;model.add(pack);
+    const blockyPack=new THREE.Mesh(new THREE.BoxGeometry(.62,.68,.24,2,2,1),packMat);blockyPack.position.set(0,1.26,.34);blockyPack.castShadow=true;blockyPack.visible=blocky;model.add(blockyPack);
+    const packFlap=new THREE.Mesh(new THREE.BoxGeometry(.54,.2,.1,2,2,1),packMat);packFlap.position.set(0,1.5,.62);packFlap.castShadow=true;packFlap.visible=!blocky;model.add(packFlap);
     const harness=mat(0x17262b),belt=mat(0x5b3d28);
-    for(const x of [-.22,.22]){const strap=new THREE.Mesh(new THREE.BoxGeometry(.055,.72,.055),harness);strap.position.set(x,1.3,-.39);strap.rotation.z=x*.16;model.add(strap);}
-    const beltMesh=new THREE.Mesh(new THREE.BoxGeometry(.82,.14,.48,2,1,2),belt);beltMesh.position.set(0,.88,0);beltMesh.castShadow=true;model.add(beltMesh);
-    for(const x of [-.4,.4]){const pouch=new THREE.Mesh(new THREE.BoxGeometry(.18,.22,.2,2,2,1),belt);pouch.position.set(x,.84,-.28);pouch.castShadow=true;model.add(pouch);}
-    const bedroll=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,.72,8),boot);bedroll.rotation.z=Math.PI/2;bedroll.position.set(0,.82,.55);model.add(bedroll);
-    for(const x of [-.23,.23]){const strap=new THREE.Mesh(new THREE.BoxGeometry(.06,.72,.05),boot);strap.position.set(x,1.25,.64);model.add(strap);}
+    for(const x of [-.22,.22]){const strap=new THREE.Mesh(new THREE.BoxGeometry(.055,.72,.055),harness);strap.position.set(x,1.3,-.39);strap.rotation.z=x*.16;strap.visible=!blocky;model.add(strap);}
+    const beltMesh=new THREE.Mesh(new THREE.BoxGeometry(.82,.14,.48,2,1,2),belt);beltMesh.position.set(0,.88,0);beltMesh.castShadow=true;beltMesh.visible=!blocky;model.add(beltMesh);
+    for(const x of [-.4,.4]){const pouch=new THREE.Mesh(new THREE.BoxGeometry(.18,.22,.2,2,2,1),belt);pouch.position.set(x,.84,-.28);pouch.castShadow=true;pouch.visible=!blocky;model.add(pouch);}
+    const bedroll=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,.72,8),boot);bedroll.rotation.z=Math.PI/2;bedroll.position.set(0,.82,.55);bedroll.visible=!blocky;model.add(bedroll);
+    for(const x of [-.23,.23]){const strap=new THREE.Mesh(new THREE.BoxGeometry(.06,.72,.05),boot);strap.position.set(x,1.25,.64);strap.visible=!blocky;model.add(strap);}
+    for(const x of [-.2,.2]){const strap=new THREE.Mesh(new THREE.BoxGeometry(.07,.62,.035),harness);strap.position.set(x,1.28,.205);strap.rotation.z=x*.12;strap.visible=blocky;model.add(strap);}
     const neck=new THREE.Mesh(new THREE.CylinderGeometry(.15,.17,.18,8),skin);neck.position.y=1.83;model.add(neck);
-    const head=new THREE.Mesh(new THREE.IcosahedronGeometry(.38,1),skin);head.position.y=2.12;head.castShadow=true;model.add(head);
+    const head=new THREE.Mesh(blocky?new THREE.BoxGeometry(.72,.72,.72):new THREE.IcosahedronGeometry(.38,1),skin);head.position.y=2.12;head.castShadow=true;model.add(head);
     const faceMat=new THREE.MeshStandardMaterial({color:0x1c1b1e, roughness:0.72, metalness:0.08});
     const faceDetails=new THREE.Group();head.add(faceDetails);
-    const leftEye=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMat);leftEye.position.set(-.12,.06,-.31);faceDetails.add(leftEye);
-    const rightEye=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMat);rightEye.position.set(.12,.06,-.31);faceDetails.add(rightEye);
-    const nose=new THREE.Mesh(new THREE.ConeGeometry(.045,.16,12),faceMat);nose.rotation.x=Math.PI/2;nose.position.set(0,-.02,-.36);faceDetails.add(nose);
+    const leftEye=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMat);leftEye.position.set(-.12,.06,-.38);faceDetails.add(leftEye);
+    const rightEye=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMat);rightEye.position.set(.12,.06,-.38);faceDetails.add(rightEye);
+    const nose=new THREE.Mesh(new THREE.ConeGeometry(.045,.16,12),faceMat);nose.rotation.x=-Math.PI/2;nose.position.set(0,-.02,-.43);faceDetails.add(nose);
+    const earGeo=new THREE.BoxGeometry(.12,.2,.12);for(const x of [-.39,.39]){const ear=new THREE.Mesh(earGeo,skin);ear.position.set(x,0,-.01);ear.visible=blocky;head.add(ear);}
     const mouth=new THREE.Mesh(new THREE.BoxGeometry(.18,.04,.02),faceMat);mouth.position.set(0,-.18,-.32);faceDetails.add(mouth);
-    const hair=new THREE.Mesh(new THREE.SphereGeometry(.39,8,5,0,Math.PI*2,0,Math.PI*.48),hairMat);hair.position.y=2.23;model.add(hair);
-    const limb=(x:number,y:number,material:THREE.Material,length:number,radius:number)=>{const pivot=new THREE.Group();pivot.position.set(x,y,0);const mesh=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius*.9,length,7),material);mesh.position.y=-length/2;mesh.castShadow=true;pivot.add(mesh);model.add(pivot);return pivot;};
+    nose.visible=true;mouth.visible=!blocky;
+    if(blocky){const smile=new THREE.Mesh(new THREE.TorusGeometry(.13,.018,6,16,Math.PI),faceMat);smile.rotation.z=Math.PI;smile.position.set(0,-.1,-.405);faceDetails.add(smile);}
+    const hair=new THREE.Mesh(blocky?new THREE.BoxGeometry(.76,.25,.76):new THREE.SphereGeometry(.39,8,5,0,Math.PI*2,0,Math.PI*.48),hairMat);hair.position.y=blocky?2.56:2.23;model.add(hair);
+    const limb=(x:number,y:number,material:THREE.Material,length:number,radius:number)=>{const pivot=new THREE.Group();pivot.position.set(x,y,0);if(blocky){const upper=new THREE.Mesh(new THREE.BoxGeometry(radius*2.35,length*.52,radius*2.35),material),lower=new THREE.Mesh(new THREE.BoxGeometry(radius*2.35,length*.48,radius*2.35),skin);upper.position.y=-length*.26;lower.position.y=-length*.76;upper.castShadow=lower.castShadow=true;pivot.add(upper,lower);}else{const mesh=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius*.9,length,7),material);mesh.position.y=-length/2;mesh.castShadow=true;pivot.add(mesh);}model.add(pivot);return pivot;};
     const leftArm=limb(-.56,1.58,shirt,.72,.13),rightArm=limb(.56,1.58,shirt,.72,.13);
-    for(const x of [-.5,.5]){const shoulder=new THREE.Mesh(new THREE.SphereGeometry(.2,8,6),shirt);shoulder.position.set(x,1.58,0);shoulder.scale.set(1.05,.82,1);shoulder.castShadow=true;model.add(shoulder);}
+    for(const x of [-.5,.5]){const shoulder=new THREE.Mesh(blocky?new THREE.BoxGeometry(.28,.28,.48):new THREE.SphereGeometry(.2,8,6),shirt);shoulder.position.set(x,1.58,0);shoulder.scale.set(1.05,.82,1);shoulder.castShadow=true;model.add(shoulder);}
     bodyShape.current={player:model,body,leftArm,rightArm};
     const width=.78+look.build*.5,height=.82+look.height*.38,arms=.82+look.muscle*.55;model.scale.set(width,height,width);body.scale.set(1+look.muscle*.18,1,1+look.muscle*.18);leftArm.scale.set(arms,1,arms);rightArm.scale.set(arms,1,arms);leftArm.position.x=-(.48+look.build*.11+look.muscle*.07);rightArm.position.x=-leftArm.position.x;
     const collar=new THREE.Mesh(new THREE.TorusGeometry(.2,.055,6,12),shirt);collar.rotation.x=Math.PI/2;collar.position.y=1.86;model.add(collar);
-    const leftHand=new THREE.Mesh(new THREE.SphereGeometry(.14,7,6),skin);leftHand.position.y=-.75;leftArm.add(leftHand);
+    const leftHand=new THREE.Mesh(blocky?new THREE.BoxGeometry(.24,.24,.24):new THREE.SphereGeometry(.14,7,6),skin);leftHand.position.y=-.75;leftArm.add(leftHand);
     const rightHand=leftHand.clone();rightArm.add(rightHand);
     const leftLeg=limb(-.23,.82,pants,.83,.17),rightLeg=limb(.23,.82,pants,.83,.17);
-    const sole=mat(0x101b20),leftBoot=new THREE.Mesh(new THREE.CapsuleGeometry(.16,.24,3,6),boot);leftBoot.rotation.x=Math.PI/2;leftBoot.position.set(0,-.84,-.16);leftBoot.scale.set(1,1,1.12);leftBoot.castShadow=true;leftLeg.add(leftBoot);
+    const sole=mat(0x101b20),leftBoot=new THREE.Mesh(blocky?new THREE.BoxGeometry(.34,.22,.58):new THREE.CapsuleGeometry(.16,.24,3,6),boot);leftBoot.rotation.x=blocky?0:Math.PI/2;leftBoot.position.set(0,-.84,-.16);leftBoot.scale.set(1,1,1.12);leftBoot.castShadow=true;leftLeg.add(leftBoot);
     const leftSole=new THREE.Mesh(new THREE.BoxGeometry(.3,.1,.5,2,1,2),sole);leftSole.position.set(0,-.98,-.16);leftSole.castShadow=true;leftLeg.add(leftSole);
     const rightBoot=leftBoot.clone(),rightSole=leftSole.clone();rightLeg.add(rightBoot,rightSole);
 
@@ -367,22 +551,26 @@ export default function IslandGame() {
     const remotePlayers=new Map<string,RemoteAvatar>();
     let localVoiceStream:MediaStream|null=null,processVoiceSignals=(signals:VoiceSignal[],players:OnlinePlayer[])=>{};const voicePeers=new Map<string,RTCPeerConnection>(),voiceAudios=new Map<string,HTMLAudioElement>(),seenSignals=new Set<number>(),pendingCandidates=new Map<string,RTCIceCandidateInit[]>();
     const makeRemote=(p:OnlinePlayer)=>{
-      const root=new THREE.Group(),avatar=new THREE.Group(),look={...DEFAULT_LOOK,...p.appearance};root.add(avatar);scene.add(root);
+      const root=new THREE.Group(),avatar=new THREE.Group(),look={...DEFAULT_LOOK,...p.appearance},blocky=look.character==="blocky";root.add(avatar);scene.add(root);
       const remoteMat=(color:number)=>new THREE.MeshStandardMaterial({color,roughness:.82,flatShading:true});
       const skinR=remoteMat(look.skin),shirtR=remoteMat(look.shirt),pantsR=remoteMat(look.pants),packR=remoteMat(look.pack),hairR=remoteMat(look.hair),bootsR=remoteMat(0x17262b);
-      const torso=new THREE.Mesh(new THREE.CapsuleGeometry(.43,.74,3,7),shirtR);torso.position.y=1.22;avatar.add(torso);
-      const backpack=new THREE.Mesh(new THREE.BoxGeometry(.67,.78,.36),packR);backpack.position.set(0,1.25,.43);avatar.add(backpack);
-      const face=new THREE.Mesh(new THREE.IcosahedronGeometry(.38,1),skinR);face.position.y=2.12;avatar.add(face);
+      const torso=new THREE.Mesh(blocky?new THREE.BoxGeometry(.78,.92,.46):new THREE.CapsuleGeometry(.43,.74,3,7),shirtR);torso.position.y=1.22;avatar.add(torso);
+      const backpack=new THREE.Mesh(new THREE.BoxGeometry(.67,.78,.36),packR);backpack.position.set(0,1.25,.43);backpack.visible=!blocky;avatar.add(backpack);
+      const blockyBackpack=new THREE.Mesh(new THREE.BoxGeometry(.62,.68,.24,2,2,1),packR);blockyBackpack.position.set(0,1.24,.34);blockyBackpack.visible=blocky;avatar.add(blockyBackpack);
+      for(const x of [-.2,.2]){const strap=new THREE.Mesh(new THREE.BoxGeometry(.07,.62,.035),shirtR);strap.position.set(x,1.26,.205);strap.rotation.z=x*.12;strap.visible=blocky;avatar.add(strap);}
+      const face=new THREE.Mesh(blocky?new THREE.BoxGeometry(.72,.72,.72):new THREE.IcosahedronGeometry(.38,1),skinR);face.position.y=2.12;avatar.add(face);
       const faceMatR=new THREE.MeshStandardMaterial({color:0x1c1b1e, roughness:0.72, metalness:0.08});
       const faceDetailsR=new THREE.Group();face.add(faceDetailsR);
-      const leftEyeR=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMatR);leftEyeR.position.set(-.12,.06,-.31);faceDetailsR.add(leftEyeR);
-      const rightEyeR=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMatR);rightEyeR.position.set(.12,.06,-.31);faceDetailsR.add(rightEyeR);
-      const noseR=new THREE.Mesh(new THREE.ConeGeometry(.045,.16,12),faceMatR);noseR.rotation.x=Math.PI/2;noseR.position.set(0,-.02,-.36);faceDetailsR.add(noseR);
+      const leftEyeR=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMatR);leftEyeR.position.set(-.12,.06,-.38);faceDetailsR.add(leftEyeR);
+      const rightEyeR=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMatR);rightEyeR.position.set(.12,.06,-.38);faceDetailsR.add(rightEyeR);
+      const noseR=new THREE.Mesh(new THREE.ConeGeometry(.045,.16,12),faceMatR);noseR.rotation.x=-Math.PI/2;noseR.position.set(0,-.02,-.43);faceDetailsR.add(noseR);
+      const earGeoR=new THREE.BoxGeometry(.12,.2,.12);for(const x of [-.39,.39]){const ear=new THREE.Mesh(earGeoR,skinR);ear.position.set(x,0,-.01);ear.visible=blocky;face.add(ear);}
       const mouthR=new THREE.Mesh(new THREE.BoxGeometry(.18,.04,.02),faceMatR);mouthR.position.set(0,-.18,-.32);faceDetailsR.add(mouthR);
-      const cap=new THREE.Mesh(new THREE.SphereGeometry(.39,8,5,0,Math.PI*2,0,Math.PI*.48),hairR);cap.position.y=2.23;avatar.add(cap);
-      const remoteLimb=(x:number,y:number,material:THREE.Material,length:number,radius:number)=>{const pivot=new THREE.Group(),mesh=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius*.9,length,6),material);pivot.position.set(x,y,0);mesh.position.y=-length/2;pivot.add(mesh);avatar.add(pivot);return pivot;};
+      const smileR=new THREE.Mesh(new THREE.TorusGeometry(.13,.018,6,16,Math.PI),faceMatR);smileR.rotation.z=Math.PI;smileR.position.set(0,-.1,-.405);smileR.visible=blocky;faceDetailsR.add(smileR);noseR.visible=true;mouthR.visible=!blocky;
+      const cap=new THREE.Mesh(blocky?new THREE.BoxGeometry(.76,.25,.76):new THREE.SphereGeometry(.39,8,5,0,Math.PI*2,0,Math.PI*.48),hairR);cap.position.y=blocky?2.56:2.23;avatar.add(cap);
+      const remoteLimb=(x:number,y:number,material:THREE.Material,length:number,radius:number)=>{const pivot=new THREE.Group();pivot.position.set(x,y,0);if(blocky){const upper=new THREE.Mesh(new THREE.BoxGeometry(radius*2.35,length*.52,radius*2.35),material),lower=new THREE.Mesh(new THREE.BoxGeometry(radius*2.35,length*.48,radius*2.35),skinR);upper.position.y=-length*.26;lower.position.y=-length*.76;pivot.add(upper,lower);}else{const mesh=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius*.9,length,6),material);mesh.position.y=-length/2;pivot.add(mesh);}avatar.add(pivot);return pivot;};
       const leftArmR=remoteLimb(-.56,1.58,shirtR,.72,.13),rightArmR=remoteLimb(.56,1.58,shirtR,.72,.13),leftLegR=remoteLimb(-.23,.82,pantsR,.83,.17),rightLegR=remoteLimb(.23,.82,pantsR,.83,.17);
-      const handR=new THREE.Mesh(new THREE.SphereGeometry(.14,7,6),skinR);handR.position.y=-.75;leftArmR.add(handR);rightArmR.add(handR.clone());
+      const handR=new THREE.Mesh(blocky?new THREE.BoxGeometry(.24,.24,.24):new THREE.SphereGeometry(.14,7,6),skinR);handR.position.y=-.75;leftArmR.add(handR);rightArmR.add(handR.clone());
       const bootR=new THREE.Mesh(new THREE.BoxGeometry(.28,.2,.45),bootsR);bootR.position.set(0,-.86,-.08);leftLegR.add(bootR);rightLegR.add(bootR.clone());
       const width=.78+look.build*.5,height=.82+look.height*.38,armScale=.82+look.muscle*.55;avatar.scale.set(width,height,width);torso.scale.set(1+look.muscle*.18,1,1+look.muscle*.18);leftArmR.scale.set(armScale,1,armScale);rightArmR.scale.set(armScale,1,armScale);
       const canvas=document.createElement("canvas");canvas.width=256;canvas.height=64;const ctx2=canvas.getContext("2d");if(ctx2){ctx2.font="bold 26px Arial";ctx2.textAlign="center";ctx2.fillStyle="#071719cc";ctx2.fillRect(0,8,256,44);ctx2.fillStyle="#eafff5";ctx2.fillText(p.name,128,40);}const label=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas),transparent:true,depthTest:false}));label.position.y=2.9;label.scale.set(3.2,.8,1);root.add(label);
@@ -391,7 +579,7 @@ export default function IslandGame() {
     };
 
     let yaw=0, pitch=.32, last=performance.now(), lastHud=0, lastSync=0,lastNpcSync=0,lastFullSync=0,lastBoundaryNotice=0, gameTime=.08,lastRoomServerNow=0, health=100, oxygen=100, scrap=0, cells=0, wood=0,stone=0,treasure=0,discoveries=0,craftedRaft=false,ridingRaft=false,downed=false,downedTimer=0,reviveProgress=0,won=false, gameOver=false, damagedAt=0, messageUntil=0, syncInFlight=0, localPose="idle",packHealReady=true;
-    let jumpHeight=0, jumpVelocity=0, jumpWasDown=false, swimDepth=0, cameraSwimPose=0, cameraInWater=false, heldRock:ThrowableRock|null=null, lastActionRock:ThrowableRock|null=null, isAiming=false, springCooldown=0, climbing=false, climbHeight=0,climbFort=-1,dungeonLevel=0,falling=false,fallY=0,fallVelocity=0,lastSupportY=surfaceHeight(0,90);const discovered=new Set<number>();
+    let jumpHeight=0, jumpVelocity=0, jumpWasDown=false, swimDepth=0, cameraSwimPose=0, cameraInWater=false, heldRock:ThrowableRock|null=null, lastActionRock:ThrowableRock|null=null, isAiming=false, springCooldown=0, climbing=false, climbHeight=0,climbFort=-1,dungeonLevel=0,falling=false,fallY=0,fallVelocity=0,lastSupportY=surfaceHeight(0,90),smoothStairY=lastSupportY;const discovered=new Set<number>();
     const velocity=new THREE.Vector3(),moveDir=new THREE.Vector3(),zeroVelocity=new THREE.Vector3(),proposedPosition=new THREE.Vector3(),zombieDirection=new THREE.Vector3(),wanderDirection=new THREE.Vector3(),enemyDirection=new THREE.Vector3(),cameraTarget=new THREE.Vector3(),desiredCamera=new THREE.Vector3();
     const sky=new THREE.Color(),nightSky=new THREE.Color(0x07121f),daySky=new THREE.Color(0x91d6d0),eventSky=new THREE.Color(0x521629);
     const starGeometry=new THREE.BufferGeometry(),starPositions:number[]=[];
@@ -476,6 +664,11 @@ export default function IslandGame() {
     };
     const onlineRock = (): OnlineRock | null => { const rock = heldRock ?? lastActionRock; if (!rock) return null; const mesh = activateRock(rock), v = rock.velocity ?? new THREE.Vector3(), geometryScale = rock.instanceIndex === null ? rock.radius : 1; return { id: rock.id, state: rock.held ? "held" : rock.velocity ? "thrown" : "rest", radius: rock.radius, scale: [rock.baseScale.x * geometryScale, rock.baseScale.y * geometryScale, rock.baseScale.z * geometryScale], position: [mesh.position.x, mesh.position.y, mesh.position.z], velocity: [v.x, v.y, v.z] }; };
     rockAction.current = pickupOrThrow;
+    const fortressClimbPosition = (fort: Fortress, height: number) => {
+      if (fort !== fortresses[5]) return { x: fort.x, z: fort.ladderZ };
+      const stairRadius = fort.radius + 2.2, stairTurns = 3.5, progress = THREE.MathUtils.clamp((height - specialStairStart) / (fort.height - specialStairStart), 0, 1), angle = -Math.PI / 2 + progress * stairTurns * Math.PI * 2;
+      return { x: fort.x + Math.cos(angle) * stairRadius, z: fort.z + Math.sin(angle) * stairRadius };
+    };
     const toggleFortressLadder = () => { if (climbing && climbFort >= 0) { climbing = false; climbFort = -1; velocity.set(0, 0, 0); notice("ปล่อยบันไดแล้ว", 1.5); return; } let nearest = -1, best = 2.25; fortresses.forEach((f, i) => { const d = Math.hypot(player.position.x - f.x, player.position.z - f.ladderZ); if (d < best) { best = d; nearest = i; } }); if (nearest < 0) { notice("เข้าใกล้บันไดป้อมก่อนกด L", 2); return; } const f = fortresses[nearest]; climbing = true; climbFort = nearest; climbHeight = THREE.MathUtils.clamp(player.position.y - f.ground, 0, f.height + .2); jumpHeight = 0; velocity.set(0, 0, 0); notice("เกาะบันไดแล้ว • W ขึ้น • S ลง • L ปล่อย", 3); };
     const useSurvivalPack = () => { if (!packHealReady) { notice("ชุดปฐมพยาบาลในกระเป๋าถูกใช้ไปแล้ว", 2); return; } if (health >= 100) { notice("กระเป๋าเอาตัวรอด: ชุดปฐมพยาบาลพร้อมใช้ • กด B เมื่อบาดเจ็บ", 3); return; } health = Math.min(100, health + 35); packHealReady = false; sound(690, .25); notice("ใช้ชุดปฐมพยาบาลจากกระเป๋า • ฟื้นพลังชีวิต 35", 3); };
     const buildBaseWall = () => { if (dungeonLevel > 0) { notice("สร้างฐานได้เฉพาะบนเกาะ", 2); return; } if (wood < 2 || stone < 1) { notice("กำแพงต้องใช้ไม้ 2 และหิน 1", 2); return; } wood -= 2; stone -= 1; const forward = new THREE.Vector3(0, 0, -4).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation.y), x = player.position.x + forward.x, z = player.position.z + forward.z, y = surfaceHeight(x, z), wall = addMesh(new THREE.BoxGeometry(5, 2.8, .55), mat(0x795234), x, y + 1.4, z); wall.rotation.y = player.rotation.y; builtWalls.push(wall); colliders.push({ x, z, r: 2.1 }); rewardProgress(12, 3, builtWalls.length >= 2 ? "ช่างสร้างฐาน" : undefined); notice("สร้างกำแพงฐานแล้ว", 2); };
@@ -497,7 +690,7 @@ export default function IslandGame() {
         sky.copy(nightSky).lerp(daySky, daylight); scene.background = sky; scene.fog.color.copy(sky);
         const night = daylight < .33, nightness = 1 - THREE.MathUtils.smoothstep(daylight, .07, .4), nightEvent = night && Math.floor(gameTime * 72) % 3 === 0; if (nightEvent) { sky.lerp(eventSky, .38); scene.fog.color.copy(sky); scene.fog.density = .0052; } else scene.fog.density = .0032; enemyLight.intensity = night ? 3 : 0; beacon.intensity = won ? 12 : (night ? 2.5 : 0);
         stars.visible=nightness>.01;starMaterial.opacity=nightness*.88;aurora.visible=nightness>.01;auroraMaterials.forEach((material,index)=>{material.opacity=nightness*(.075+Math.sin(now*.0007+index)*.018);});aurora.rotation.y=now*.000018;
-        const onMainNow = Math.hypot(player.position.x, player.position.z) < PLAY_RADIUS, onSecondNow = Math.hypot(player.position.x - SECOND_X, player.position.z - SECOND_Z) < SECOND_RADIUS - 1, bridgeArea = onBridge(player.position.x, player.position.z), onBridgeNow = bridgeArea && player.position.y > BRIDGE_Y - 1.15, underBridge = bridgeArea && !onBridgeNow, inOcean = dungeonLevel === 0 && (underBridge || (!onMainNow && !onSecondNow && !onBridgeNow)) && player.position.x > WORLD_MIN_X && player.position.x < WORLD_MAX_X && Math.abs(player.position.z) < WORLD_Z_LIMIT;
+        const onMainNow = Math.hypot(player.position.x, player.position.z) < PLAY_RADIUS, onSecondNow = Math.hypot(player.position.x - SECOND_X, player.position.z - SECOND_Z) < SECOND_RADIUS - 1, bridgeArea = onBridge(player.position.x, player.position.z), fortressBridgeY = fortressBridgeHeight(player.position.x, player.position.z), onFortressBridge = Number.isFinite(fortressBridgeY) && player.position.y > fortressBridgeY - 1.15, onBridgeNow = (bridgeArea && player.position.y > BRIDGE_Y - 1.15) || onFortressBridge, underBridge = bridgeArea && !onBridgeNow, inOcean = dungeonLevel === 0 && (underBridge || (!onMainNow && !onSecondNow && !onBridgeNow)) && player.position.x > WORLD_MIN_X && player.position.x < WORLD_MAX_X && Math.abs(player.position.z) < WORLD_Z_LIMIT;
         const inSwamp = Math.hypot(player.position.x - SWAMP_X, player.position.z - SWAMP_Z) < SWAMP_RADIUS - 2 && surfaceHeight(player.position.x, player.position.z) < SWAMP_WATER - .7;
         const swimming = dungeonLevel === 0 && (inSwamp || inOcean) && jumpHeight <= .01 && !falling, waterLevel = inOcean ? OCEAN_LEVEL : SWAMP_WATER;
         const wantsDive = swimming && !!keys.current.KeyC, fastDive = wantsDive && !!keys.current.ShiftLeft;
@@ -508,15 +701,15 @@ export default function IslandGame() {
         else velocity.lerp(zeroVelocity, .13);
         if (heldRock && isAiming) player.rotation.y = yaw;
         const proposed = proposedPosition.copy(player.position).addScaledVector(velocity, dt); proposed.y = 0;
-        const activeColliders = dungeonLevel > 0 ? dungeonColliders : colliders; for (const c of activeColliders) { if ("floor" in c && c.floor !== dungeonLevel) continue; const dx = proposed.x - c.x, dz = proposed.z - c.z, min = c.r + .52; if (Math.abs(dx) > min || Math.abs(dz) > min) continue; const dist = Math.hypot(dx, dz); if (dist < min) { const nx = dist > .001 ? dx / dist : 1, nz = dist > .001 ? dz / dist : 0; proposed.x = c.x + nx * min; proposed.z = c.z + nz * min; velocity.multiplyScalar(.72); } }
-        const proposedOnMain = Math.hypot(proposed.x, proposed.z) < PLAY_RADIUS, proposedOnSecond = Math.hypot(proposed.x - SECOND_X, proposed.z) < SECOND_RADIUS - 1, proposedBridge = onBridge(proposed.x, proposed.z), shoreEntry = dungeonLevel === 0 && !inOcean && !proposedOnMain && !proposedOnSecond && !proposedBridge; const outsideWorld = proposed.x <= WORLD_MIN_X || proposed.x >= WORLD_MAX_X || Math.abs(proposed.z) >= WORLD_Z_LIMIT; if (outsideWorld) { proposed.x = THREE.MathUtils.clamp(proposed.x, WORLD_MIN_X + 1, WORLD_MAX_X - 1); proposed.z = THREE.MathUtils.clamp(proposed.z, -WORLD_Z_LIMIT + 1, WORLD_Z_LIMIT - 1); velocity.multiplyScalar(-.18); if (now - lastBoundaryNotice > 1800) { lastBoundaryNotice = now; notice("ถึงขอบเขตปลอดภัยของทะเลแล้ว", 1.5); } } player.position.x = proposed.x; player.position.z = proposed.z;
+        const activeColliders = dungeonLevel > 0 ? dungeonColliders : colliders; for (const c of activeColliders) { if ("floor" in c && c.floor !== dungeonLevel) continue; if ("minY" in c && ((c.minY !== undefined && player.position.y < c.minY) || (c.maxY !== undefined && player.position.y > c.maxY))) continue; const colliderGround = surfaceHeight(proposed.x, proposed.z), elevatedBridge = dungeonLevel === 0 && Number.isFinite(fortressBridgeHeight(proposed.x, proposed.z)) && player.position.y > colliderGround + 3; if (elevatedBridge) continue; const dx = proposed.x - c.x, dz = proposed.z - c.z, min = c.r + .52; if (Math.abs(dx) > min || Math.abs(dz) > min) continue; const dist = Math.hypot(dx, dz); if (dist < min) { const nx = dist > .001 ? dx / dist : 1, nz = dist > .001 ? dz / dist : 0; proposed.x = c.x + nx * min; proposed.z = c.z + nz * min; velocity.multiplyScalar(.72); } }
+        const proposedOnMain = Math.hypot(proposed.x, proposed.z) < PLAY_RADIUS, proposedOnSecond = Math.hypot(proposed.x - SECOND_X, proposed.z) < SECOND_RADIUS - 1, proposedBridge = onBridge(proposed.x, proposed.z), proposedFortressBridge = Number.isFinite(fortressBridgeHeight(proposed.x, proposed.z)), shoreEntry = dungeonLevel === 0 && !inOcean && !proposedOnMain && !proposedOnSecond && !proposedBridge && !proposedFortressBridge; const outsideWorld = proposed.x <= WORLD_MIN_X || proposed.x >= WORLD_MAX_X || Math.abs(proposed.z) >= WORLD_Z_LIMIT; if (outsideWorld) { proposed.x = THREE.MathUtils.clamp(proposed.x, WORLD_MIN_X + 1, WORLD_MAX_X - 1); proposed.z = THREE.MathUtils.clamp(proposed.z, -WORLD_Z_LIMIT + 1, WORLD_Z_LIMIT - 1); velocity.multiplyScalar(-.18); if (now - lastBoundaryNotice > 1800) { lastBoundaryNotice = now; notice("ถึงขอบเขตปลอดภัยของทะเลแล้ว", 1.5); } } player.position.x = proposed.x; player.position.z = proposed.z;
         const jumpDown = !!keys.current.Space;
         if (jumpDown && !jumpWasDown && jumpHeight <= .001 && !swimming && !falling) { jumpVelocity = 7.2; sound(260, .08); }
         jumpWasDown = jumpDown; jumpVelocity -= 18 * dt; jumpHeight += jumpVelocity * dt;
         if (jumpHeight < 0) { jumpHeight = 0; jumpVelocity = 0; }
         springCooldown = Math.max(0, springCooldown - dt); if (jumpHeight < .08 && springCooldown <= 0) { for (const spring of springs) { if (Math.hypot(player.position.x - spring.position.x, player.position.z - spring.position.z) < 1.65) { jumpVelocity = 15.5; jumpHeight = .12; springCooldown = .8; sound(520, .22); notice("สปริงดีดตัว!", 1.2); break; } } }
-        const ladderNear = Math.hypot(player.position.x - OBS_X, player.position.z - (OBS_Z - 3.15)) < 1.35; if (!climbing && ladderNear && (keys.current.KeyW || keys.current.ArrowUp)) { climbing = true; climbFort = -1; climbHeight = Math.max(0, player.position.y - obsGround); jumpHeight = 0; velocity.set(0, 0, 0); notice("กำลังปีนบันได • W ขึ้น • S ลง", 2); } if (climbing) { const fort = climbFort >= 0 ? fortresses[climbFort] : null, base = fort?.ground ?? obsGround, max = fort?.height ?? OBS_HEIGHT; player.position.x = fort?.x ?? OBS_X; player.position.z = fort?.ladderZ ?? (OBS_Z - 3.15); const climbInput = (keys.current.KeyW || keys.current.ArrowUp ? 1 : 0) - (keys.current.KeyS || keys.current.ArrowDown ? 1 : 0); climbHeight = THREE.MathUtils.clamp(climbHeight + climbInput * dt * 6.2, 0, max + .2); if (climbHeight <= 0 && climbInput < 0) { climbing = false; climbFort = -1; } if (fort && climbHeight >= fort.height - .05 && climbInput > 0) { climbing = false; player.position.set(fort.x, fort.ground + fort.height + .5, fort.z); climbFort = -1; notice("ขึ้นถึงยอดป้อมแล้ว • สามารถเดินบนลานได้", 2.5); } }
-        const terrainY = dungeonLevel > 0 ? DUNGEON_LEVELS[dungeonLevel - 1] : inOcean ? OCEAN_LEVEL - 11 : surfaceHeight(player.position.x, player.position.z); let platformY = terrainY; for (const f of fortresses) { if (Math.hypot(player.position.x - f.x, player.position.z - f.z) < f.radius + .45 && player.position.y > f.ground + f.height - 2) platformY = Math.max(platformY, f.ground + f.height + .5); } const groundY = platformY, maxDepth = inOcean ? 9 : Math.max(.12, SWAMP_WATER - groundY - .75);
+        const ladderNear = Math.hypot(player.position.x - OBS_X, player.position.z - (OBS_Z - 3.15)) < 1.35; if (!climbing && ladderNear && (keys.current.KeyW || keys.current.ArrowUp)) { climbing = true; climbFort = -1; climbHeight = Math.max(0, player.position.y - obsGround); jumpHeight = 0; velocity.set(0, 0, 0); notice("กำลังปีนบันได • W ขึ้น • S ลง", 2); } if (climbing) { const fort = climbFort >= 0 ? fortresses[climbFort] : null, base = fort?.ground ?? obsGround, max = fort?.height ?? OBS_HEIGHT; if (fort) { const climbPosition = fortressClimbPosition(fort, climbHeight); player.position.x = climbPosition.x; player.position.z = climbPosition.z; } else { player.position.x = OBS_X; player.position.z = OBS_Z - 3.15; } const climbInput = (keys.current.KeyW || keys.current.ArrowUp ? 1 : 0) - (keys.current.KeyS || keys.current.ArrowDown ? 1 : 0); climbHeight = THREE.MathUtils.clamp(climbHeight + climbInput * dt * 6.2, 0, max + .2); if (climbHeight <= 0 && climbInput < 0) { climbing = false; climbFort = -1; } if (fort && climbHeight >= fort.height - .05 && climbInput > 0) { climbing = false; player.position.set(fort.x, fort.ground + fort.height + .5, fort.z); climbFort = -1; notice("ขึ้นถึงยอดป้อมแล้ว • สามารถเดินบนลานได้", 2.5); } }
+        const terrainY = dungeonLevel > 0 ? DUNGEON_LEVELS[dungeonLevel - 1] : inOcean ? OCEAN_LEVEL - 11 : surfaceHeight(player.position.x, player.position.z); const bridgeY = fortressBridgeHeight(player.position.x, player.position.z), bridgeSupportsPlayer = Number.isFinite(bridgeY) && player.position.y > terrainY + 2; let platformY = bridgeSupportsPlayer ? Math.max(terrainY, bridgeY) : terrainY, stairStepY = -Infinity; for (const step of specialStairSteps) { if (Math.hypot(player.position.x - step.x, player.position.z - step.z) < step.r + .45 && player.position.y > step.y - .9) { stairStepY = Math.max(stairStepY, step.y + .1); platformY = Math.max(platformY, step.y + .1); } } for (const f of fortresses) { if (Math.hypot(player.position.x - f.x, player.position.z - f.z) < f.radius + .45 && player.position.y > f.ground + f.height - 2) platformY = Math.max(platformY, f.ground + f.height + .5); } if (stairStepY > terrainY && !jumpHeight && !swimming && !falling) smoothStairY = THREE.MathUtils.lerp(smoothStairY, stairStepY, 1 - Math.exp(-dt * 12)); else if (stairStepY <= terrainY) smoothStairY = platformY; const groundY = stairStepY > terrainY ? Math.max(terrainY, smoothStairY) : platformY, maxDepth = inOcean ? 9 : Math.max(.12, SWAMP_WATER - groundY - .75);
         if (swimming) { if (wantsDive) swimDepth += dt * (fastDive ? 4.3 : 1.65); else if (jumpDown) swimDepth -= dt * 4.8; else swimDepth -= dt * .9; swimDepth = THREE.MathUtils.clamp(swimDepth, 0, maxDepth); } else swimDepth = 0;
         const underwater = swimming && swimDepth > .82, swimPose = swimming ? THREE.MathUtils.smoothstep(swimDepth, .18, 1.05) : 0; cameraSwimPose = swimPose; cameraInWater = swimming;
         if (underwater && !downed) { oxygen = Math.max(0, oxygen - dt * (fastDive ? 6.5 : 4.2)); if (oxygen <= 0) { health = Math.max(0, health - dt * 14); if (messageUntil < now) notice("ออกซิเจนหมด! กด Space เพื่อขึ้นสู่ผิวน้ำ", 1.2); if (health <= 0) { downed = true; downedTimer = 15; reviveProgress = 0; notice("คุณล้มลง • เพื่อนมีเวลา 15 วินาทีเพื่อช่วย", 4); } } } else oxygen = Math.min(100, oxygen + dt * 18);
@@ -558,8 +751,8 @@ export default function IslandGame() {
           z.root.visible=z.floor>0?dungeonLevel===z.floor:night&&dungeonLevel===0;if(!z.root.visible)return;z.root.rotation.x=0;
           const stunned=now<z.stunnedUntil,verticalGap=Math.abs(player.position.y-z.root.position.y),toPlayer=zombieDirection.subVectors(player.position,z.root.position);toPlayer.y=0;
           const distance=toPlayer.length(),sameIsland=(z.root.position.x<260)===(player.position.x<260),canReach=verticalGap<2.4;
-          const oldX=z.root.position.x,oldZ=z.root.position.z,eventBoost=nightEvent&&z.floor===0?1.55:1;if(npcAuthority&&!stunned&&sameIsland&&canReach&&distance<78){const targetAngle=Math.atan2(-toPlayer.x,-toPlayer.z);z.root.rotation.y=THREE.MathUtils.lerpAngle(z.root.rotation.y,targetAngle,Math.min(1,dt*4.5));const forward=wanderDirection.set(-Math.sin(z.root.rotation.y),0,-Math.cos(z.root.rotation.y));z.root.position.addScaledVector(forward,dt*(1.05+(i%4)*.12)*eventBoost);z.root.rotation.x=0;z.root.rotation.z=0;}else if(npcAuthority&&!stunned){z.root.rotation.y+=Math.sin(now*.0005+z.phase)*dt*.35;const forward=wanderDirection.set(-Math.sin(z.root.rotation.y),0,-Math.cos(z.root.rotation.y));z.root.position.addScaledVector(forward,dt*.22);}if(npcAuthority){const zombieWalls=z.floor>0?dungeonColliders:colliders;for(const c of zombieWalls){if("floor" in c&&c.floor!==z.floor)continue;const dx=z.root.position.x-c.x,dz=z.root.position.z-c.z,min=c.r+.46;if(Math.abs(dx)>min||Math.abs(dz)>min)continue;if(Math.hypot(dx,dz)<min){z.root.position.x=oldX;z.root.position.z=oldZ;z.root.rotation.y+=Math.PI*.62;break;}}}
-          if(npcAuthority&&canReach&&distance<1.35){const targetAngle=Math.atan2(-toPlayer.x,-toPlayer.z);z.root.rotation.y=THREE.MathUtils.lerpAngle(z.root.rotation.y,targetAngle,Math.min(1,dt*7));}
+          const oldX=z.root.position.x,oldZ=z.root.position.z,eventBoost=nightEvent&&z.floor===0?1.55:1;if(npcAuthority&&!stunned&&sameIsland&&canReach&&distance<78){const targetAngle=Math.atan2(-toPlayer.x,-toPlayer.z);z.root.rotation.y=lerpAngle(z.root.rotation.y,targetAngle,Math.min(1,dt*4.5));const forward=wanderDirection.set(-Math.sin(z.root.rotation.y),0,-Math.cos(z.root.rotation.y));z.root.position.addScaledVector(forward,dt*(1.05+(i%4)*.12)*eventBoost);z.root.rotation.x=0;z.root.rotation.z=0;}else if(npcAuthority&&!stunned){z.root.rotation.y+=Math.sin(now*.0005+z.phase)*dt*.35;const forward=wanderDirection.set(-Math.sin(z.root.rotation.y),0,-Math.cos(z.root.rotation.y));z.root.position.addScaledVector(forward,dt*.22);}if(npcAuthority){const zombieWalls=z.floor>0?dungeonColliders:colliders;for(const c of zombieWalls){if("floor" in c&&c.floor!==z.floor)continue;const dx=z.root.position.x-c.x,dz=z.root.position.z-c.z,min=c.r+.46;if(Math.abs(dx)>min||Math.abs(dz)>min)continue;if(Math.hypot(dx,dz)<min){z.root.position.x=oldX;z.root.position.z=oldZ;z.root.rotation.y+=Math.PI*.62;break;}}}
+          if(npcAuthority&&canReach&&distance<1.35){const targetAngle=Math.atan2(-toPlayer.x,-toPlayer.z);z.root.rotation.y=lerpAngle(z.root.rotation.y,targetAngle,Math.min(1,dt*7));}
           const zombieOnSecond=z.floor===0&&Math.hypot(z.root.position.x-SECOND_X,z.root.position.z-SECOND_Z)<SECOND_RADIUS;z.root.position.y=(z.floor>0?DUNGEON_LEVELS[z.floor-1]:zombieOnSecond?secondSurfaceHeight(z.root.position.x,z.root.position.z):surfaceHeight(z.root.position.x,z.root.position.z))+(stunned?.28:0);z.root.rotation.x=0;z.root.rotation.z=THREE.MathUtils.lerp(z.root.rotation.z,0,.3);const biting=!stunned&&canReach&&distance<1.5,walk=stunned||biting?0:Math.sin(now*.008+z.phase)*.28;z.leftArm.rotation.x=biting?-.9:-.62-walk;z.rightArm.rotation.x=biting?-.9:-.62+walk;z.leftLeg.rotation.x=-walk;z.rightLeg.rotation.x=walk;
           if(!downed&&biting&&now-z.lastHit>850){z.lastHit=now;const biteDamage=i>=20?15:10;health=Math.max(0,health-biteDamage);sound(82,.18);notice(i>=20?"บอสดันเจี้ยนโจมตี!":"ซอมบี้กัดคุณ! ใช้หินขว้างหรือวิ่งหนี",1.5);if(health<=0){health=0;downed=true;downedTimer=15;reviveProgress=0;}}
         });
@@ -569,7 +762,7 @@ export default function IslandGame() {
         if(downed){downedTimer-=dt;const helper=[...remotePlayers.values()].some(a=>a.root.position.distanceTo(player.position)<3);reviveProgress=helper?reviveProgress+dt:Math.max(0,reviveProgress-dt*.5);model.rotation.z=THREE.MathUtils.lerp(model.rotation.z,-1.45,.18);model.rotation.x=THREE.MathUtils.lerp(model.rotation.x,0,.18);model.position.y=THREE.MathUtils.lerp(model.position.y,.18,.16);if(reviveProgress>=2.5){downed=false;health=45;oxygen=60;model.rotation.set(0,0,0);model.position.y=0;sound(760,.3);notice("เพื่อนช่วยคุณกลับขึ้นมาแล้ว!",3);}else if(downedTimer<=0){gameOver=true;setEnd("lost");}}else{model.rotation.z=THREE.MathUtils.lerp(model.rotation.z,0,.15);model.position.y=THREE.MathUtils.lerp(model.position.y,0,.18);}
         if(!downed&&!airborne&&!swimming){const bodyRhythm=moving?Math.abs(Math.sin(now*(keys.current.ShiftLeft?.014:.01)))*(keys.current.ShiftLeft?.07:.045):0;model.position.y=THREE.MathUtils.lerp(model.position.y,bodyRhythm,.25);model.rotation.z=THREE.MathUtils.lerp(model.rotation.z,moving?Math.sin(now*(keys.current.ShiftLeft?.014:.01))*.025:0,.2);}
         if(onlineSession&&now-lastSync>115&&syncInFlight===0){lastSync=now;syncInFlight=1;const anim=[leftArm.rotation.x,rightArm.rotation.x,leftLeg.rotation.x,rightLeg.rotation.x,model.rotation.x],isAuthority=[onlineSession.playerId,...remotePlayers.keys()].sort()[0]===onlineSession.playerId,sendNpcs=isAuthority&&now-lastNpcSync>450,full=now-lastFullSync>1000;if(sendNpcs)lastNpcSync=now;if(full)lastFullSync=now;const npcs=sendNpcs?{z:zombies.map(z=>[z.root.position.x,z.root.position.y,z.root.position.z,z.root.rotation.y]),d:[dragon.position.x,dragon.position.y,dragon.position.z,dragon.rotation.y]} as NpcSnapshot:undefined;void onlinePost({action:"sync",x:player.position.x,y:player.position.y,z:player.position.z,rotation:player.rotation.y,pose:localPose,anim,appearance:{...appearanceRef.current,...(npcs?{_npcs:npcs}:{})},rock:onlineRock(),full}).finally(()=>{syncInFlight=0;});}
-        if(now-lastHud>160){lastHud=now;const quest=!craftedRaft?wood>=4&&stone>=3?"กด Q เพื่อคราฟต์แพ":"รวบรวมไม้ 4 และหิน 3 เพื่อสร้างแพ":treasure<3?"ค้นหาหีบสมบัติที่ซ่อนอยู่ทั้ง 3 ใบ":discoveries<6?"ค้นพบสถานที่สำคัญบนแผนที่ 6 แห่ง":"ซ่อมหอส่งสัญญาณและเอาชีวิตรอด";const questProgress=!craftedRaft?Math.min(100,(wood/4+stone/3)*50):treasure<3?treasure/3*100:discoveries<6?discoveries/6*100:Math.min(100,(scrap/6+cells/3)*50);let nearFort=false;for(const f of fortresses)if(Math.hypot(player.position.x-f.x,player.position.z-f.ladderZ)<2.25)nearFort=true;const defaultMessage=climbing?(climbFort>=0?"เกาะบันไดป้อม • W ขึ้น • S ลง • L ปล่อย":"กำลังปีนหอสังเกตการณ์ • W ขึ้น • S ลง"):nearFort?"กด L เพื่อเกาะบันไดป้อม":ladderNear?"กด W เพื่อปีนบันไดหอสังเกตการณ์":ridingRaft?"กำลังล่องแพ • กด R เพื่อลง":underwater?(fastDive?"ว่ายเร็วใต้น้ำ • กด Space เพื่อขึ้น":"กำลังดำน้ำ • กด Shift ร่วมกับ C เพื่อว่ายเร็ว"):swimming?(keys.current.ShiftLeft?"กำลังว่ายเร็วที่ผิวน้ำ":"กำลังลอยน้ำ • กด Shift เพื่อว่ายเร็ว • C เพื่อดำน้ำ"):nearTower?(scrap>=6&&cells>=3?"กด E เพื่อซ่อมหอส่งสัญญาณ":"หอส่งสัญญาณต้องการ 6 เศษโลหะ + 3 เซลล์"):"สำรวจสองเกาะ ป้อมปราการ และหอสังเกตการณ์";setHud(h=>({ ...h,health,oxygen:Math.round(oxygen),inWater:swimming&&!ridingRaft,scrap,cells,wood,stone,treasure,discoveries,mapX:player.position.x,mapZ:player.position.z,mapRotation:-THREE.MathUtils.radToDeg(player.rotation.y),quest,questProgress,time:gameTime,nearTower,message:messageUntil<now?defaultMessage:h.message }));}
+        if(now-lastHud>160){lastHud=now;const quest=!craftedRaft?wood>=4&&stone>=3?"กด Q เพื่อคราฟต์แพ":"รวบรวมไม้ 4 และหิน 3 เพื่อสร้างแพ":treasure<3?"ค้นหาหีบสมบัติที่ซ่อนอยู่ทั้ง 3 ใบ":discoveries<6?"ค้นพบสถานที่สำคัญบนแผนที่ 6 แห่ง":"ซ่อมหอส่งสัญญาณและเอาชีวิตรอด";const questProgress=!craftedRaft?Math.min(100,(wood/4+stone/3)*50):treasure<3?treasure/3*100:discoveries<6?discoveries/6*100:Math.min(100,(scrap/6+cells/3)*50);let nearFort=false;for(const f of fortresses)if(Math.hypot(player.position.x-f.x,player.position.z-f.ladderZ)<2.25)nearFort=true;const defaultMessage=climbing?(climbFort>=0?"เกาะบันไดป้อม • W ขึ้น • S ลง • L ปล่อย":"กำลังปีนหอสังเกตการณ์ • W ขึ้น • S ลง"):nearFort?"กด L เพื่อเกาะบันไดป้อม":ladderNear?"กด W เพื่อปีนบันไดหอสังเกตการณ์":ridingRaft?"กำลังล่องแพ • กด R เพื่อลง":underwater?(fastDive?"ว่ายเร็วใต้น้ำ • กด Space เพื่อขึ้น":"กำลังดำน้ำ • กด Shift ร่วมกับ C เพื่อว่ายเร็ว"):swimming?(keys.current.ShiftLeft?"กำลังว่ายเร็วที่ผิวน้ำ":"กำลังลอยน้ำ • กด Shift เพื่อว่ายเร็ว • C เพื่อดำน้ำ"):nearTower?(scrap>=6&&cells>=3?"กด E เพื่อซ่อมหอส่งสัญญาณ":"หอส่งสัญญาณต้องการ 6 เศษโลหะ + 3 เซลล์"):"สำรวจสองเกาะ ป้อมปราการ และหอสังเกตการณ์";setHud(h=>({ ...h,health,oxygen:Math.round(oxygen),inWater:swimming&&!ridingRaft,scrap,cells,wood,stone,treasure,discoveries,mapX:player.position.x,mapZ:player.position.z,mapRotation:-THREE.MathUtils.radToDeg(player.rotation.y),quest,questProgress,time:gameTime,nearTower,message:messageUntil<now?defaultMessage:h.message}));}
         if(now-lastHud<20){const dynamicQuest=collectionQuestStatus(collectionQuest,craftedRaft,wood,stone,treasure,discoveries,scrap,cells);setHud(h=>({...h,...dynamicQuest}));}
       }
       for (const avatar of remotePlayers.values()) { const predictionSeconds = Math.min(.18, Math.max(0, (now - avatar.sampleAt) / 1000)); avatar.renderTarget.copy(avatar.target).addScaledVector(avatar.velocity, predictionSeconds); const gap = avatar.root.position.distanceTo(avatar.renderTarget); if (gap > 12) avatar.root.position.copy(avatar.renderTarget); else avatar.root.position.lerp(avatar.renderTarget, 1 - Math.exp(-dt * 11)); let delta = avatar.rotation - avatar.root.rotation.y; delta = Math.atan2(Math.sin(delta), Math.cos(delta)); avatar.root.rotation.y += delta * (1 - Math.exp(-dt * 10)); const t = now * .008, movingRemote = avatar.pose === "walk" || avatar.pose === "run", swimmingRemote = avatar.pose.startsWith("swim") || avatar.pose === "underwater", a = avatar.anim; const strideRemote = movingRemote ? Math.sin(t * (avatar.pose === "run" ? 1.7 : 1)) * .65 : 0; avatar.leftLeg.rotation.x = THREE.MathUtils.lerp(avatar.leftLeg.rotation.x, avatar.pose === "downed" ? -1.05 : a ? a[2] : swimmingRemote ? .35 + Math.sin(t) * .35 : -strideRemote, .32); avatar.rightLeg.rotation.x = THREE.MathUtils.lerp(avatar.rightLeg.rotation.x, avatar.pose === "downed" ? -1.05 : a ? a[3] : swimmingRemote ? .35 - Math.sin(t) * .35 : strideRemote, .32); avatar.leftArm.rotation.x = THREE.MathUtils.lerp(avatar.leftArm.rotation.x, a ? a[0] : swimmingRemote ? .8 + Math.sin(t) * .5 : strideRemote, .32); avatar.rightArm.rotation.x = THREE.MathUtils.lerp(avatar.rightArm.rotation.x, a ? a[1] : swimmingRemote ? .8 - Math.sin(t) * .5 : -strideRemote, .32); avatar.model.rotation.x = THREE.MathUtils.lerp(avatar.model.rotation.x, avatar.pose === "downed" ? .32 : a ? a[4] : avatar.pose === "underwater" ? -1.18 : 0, .28); avatar.model.rotation.z = THREE.MathUtils.lerp(avatar.model.rotation.z, 0, .18); avatar.model.position.y = THREE.MathUtils.lerp(avatar.model.position.y, avatar.pose === "downed" ? -.42 : 0, .18); if (avatar.rockMesh && avatar.rockState?.state === "thrown") { const r = avatar.rockState, v = r.velocity; avatar.rockMesh.position.set(r.position[0] + v[0] * predictionSeconds, r.position[1] + v[1] * predictionSeconds - .5 * 15 * predictionSeconds * predictionSeconds, r.position[2] + v[2] * predictionSeconds); avatar.rockMesh.rotation.x += dt * 4; avatar.rockMesh.rotation.z += dt * 3; } }
@@ -597,36 +790,37 @@ export default function IslandGame() {
   const openChat = () => { document.exitPointerLock?.(); setChatOpen(v => !v); };
   const submitChat = () => { const message = chatInput.trim(); if (!message) return; chatSend.current(message); setChatInput(""); };
   const startOnline = async (action: "create" | "join" | "resume") => { setConnecting(true); setOnlineError(""); try { let session: OnlineSession; if (action === "resume" && savedSession) { session = savedSession; const check = await fetch(`/api/multiplayer?code=${session.code}&playerId=${session.playerId}`); if (!check.ok) throw new Error("ห้องเดิมหมดอายุแล้ว"); } else { const response = await fetch("/api/multiplayer", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, code: joinCode, name: playerName, appearance }) }); const data = await response.json() as { session?: OnlineSession; error?: string }; if (!response.ok || !data.session) throw new Error(data.error || "เชื่อมต่อไม่สำเร็จ"); session = data.session; } localStorage.setItem("echo-island-room", JSON.stringify(session)); localStorage.setItem("echo-island-name", playerName); setOnlineSession(session); setSavedSession(session); setOnlineSetup(false); setStarted(true); } catch (error) { setOnlineError(error instanceof Error ? error.message : "เชื่อมต่อไม่สำเร็จ"); } finally { setConnecting(false); } };
-  const swatches = (key: ColorKey, label: string) => { const bonus = key === "shirt" ? [0x151515, 0xffd23f, 0x53e4c1, 0xd83b8c].slice(0, progress.unlocks) : []; return <div className="look-row"><span>{label}{key === "shirt" && progress.unlocks > 0 ? ` • ปลดล็อก ${progress.unlocks}` : ""}</span><div>{[...LOOK_OPTIONS[key], ...bonus].map(color => <button key={color} className={appearance[key] === color ? "selected" : ""} style={{ backgroundColor: `#${color.toString(16).padStart(6, "0")}` }} onClick={() => setAppearance(a => ({ ...a, [key]: color }))} aria-label={`${label} ${color.toString(16)}`} />)}</div></div> };
-  const shapeSlider = (key: "height" | "build" | "muscle", label: string, left: string, right: string) => <label className="shape-slider"><span><b>{label}</b><small>{Math.round(appearance[key] * 100)}%</small></span><div><em>{left}</em><input type="range" min="0" max="100" value={Math.round(appearance[key] * 100)} onChange={e => setAppearance(a => ({ ...a, [key]: Number(e.target.value) / 100 }))} /><em>{right}</em></div></label>;
+  const t = (value: string) => translate(value, language);
+  const swatches = (key: ColorKey, label: string) => { const bonus = key === "shirt" ? [0x151515, 0xffd23f, 0x53e4c1, 0xd83b8c].slice(0, progress.unlocks) : []; return <div className="look-row"><span>{t(label)}{key === "shirt" && progress.unlocks > 0 ? ` • ${t("ปลดล็อก")} ${progress.unlocks}` : ""}</span><div>{[...LOOK_OPTIONS[key], ...bonus].map(color => <button key={color} className={appearance[key] === color ? "selected" : ""} style={{ backgroundColor: `#${color.toString(16).padStart(6, "0")}` }} onClick={() => setAppearance(a => ({ ...a, [key]: color }))} aria-label={`${t(label)} ${color.toString(16)}`} />)}</div></div> };
+  const shapeSlider = (key: "height" | "build" | "muscle", label: string, left: string, right: string) => <label className="shape-slider"><span><b>{t(label)}</b><small>{Math.round(appearance[key] * 100)}%</small></span><div><em>{t(left)}</em><input type="range" min="0" max="100" value={Math.round(appearance[key] * 100)} onChange={e => setAppearance(a => ({ ...a, [key]: Number(e.target.value) / 100 }))} /><em>{t(right)}</em></div></label>;
   const hours = Math.floor((hud.time * 24 + 5) % 24), mins = Math.floor((((hud.time * 24 + 5) % 24) % 1) * 60);
   return <main className="game-shell">
-    <div ref={mount} className="viewport" aria-label="เกมสามมิติ Echo Island" />
+    <div ref={mount} className="viewport" aria-label={t("เกมสามมิติ Echo Island")} />
     <div className="grain" />
-    <header className="topbar"><div className="brand"><span className="brand-mark">E</span><div><strong>ECHO ISLAND</strong><small>เกาะที่จดจำคุณ</small></div></div><div className="top-actions">{started && onlineSession && <><button className={`icon-btn voice-btn ${voiceEnabled ? "active" : ""}`} onClick={() => voiceToggle.current()} aria-label={voiceEnabled ? "ปิดไมโครโฟน" : "เปิดเสียงตามระยะ"}>{voiceEnabled ? "🎙" : "🔇"}</button><button className={`icon-btn ${chatOpen ? "active" : ""}`} onClick={openChat} aria-label="เปิดแชต">💬</button></>}<button className="icon-btn" onClick={openWardrobe} aria-label="ปรับแต่งตัวละคร">♙</button><button className="icon-btn" onClick={() => setShowHelp(true)} aria-label="วิธีเล่น">?</button></div></header>
+    <header className="topbar"><div className="brand"><span className="brand-mark">E</span><div><strong>ECHO ISLAND</strong><small>{t("เกาะที่จดจำคุณ")}</small></div></div><div className="top-actions">{started && onlineSession && <><button className={`icon-btn voice-btn ${voiceEnabled ? "active" : ""}`} onClick={() => voiceToggle.current()} aria-label={voiceEnabled ? t("ปิดไมโครโฟน") : t("เปิดเสียงตามระยะ")}>{voiceEnabled ? "🎙" : "🔇"}</button><button className={`icon-btn ${chatOpen ? "active" : ""}`} onClick={openChat} aria-label={t("เปิดแชต")}>💬</button></>}<button className="icon-btn" onClick={openWardrobe} aria-label={t("ปรับแต่งตัวละคร")}>♙</button><button className="icon-btn" onClick={() => setShowHelp(true)} aria-label={t("วิธีเล่น")}>?</button></div></header>
     {voiceError && <div className="voice-error" onClick={() => setVoiceError("")}>{voiceError}</div>}
-    {started && onlineSession && chatOpen && <section className="room-chat"><header><b>แชตห้อง {onlineSession.code}</b><button onClick={() => setChatOpen(false)}>×</button></header><div className="chat-log">{chatMessages.length === 0 && <small>ยังไม่มีข้อความ เริ่มคุยกับเพื่อนได้เลย</small>}{chatMessages.map(m => <p key={m.id} className={m.playerId === onlineSession.playerId ? "mine" : ""}><strong>{m.name}</strong><span>{m.message}</span></p>)}</div><form onSubmit={e => { e.preventDefault(); submitChat(); }}><input autoFocus value={chatInput} maxLength={180} placeholder="พิมพ์แผนหรือข้อความถึงเพื่อน…" onChange={e => setChatInput(e.target.value)} /><button type="submit">ส่ง</button></form></section>}
+    {started && onlineSession && chatOpen && <section className="room-chat"><header><b>{t("แชตห้อง")} {onlineSession.code}</b><button onClick={() => setChatOpen(false)}>×</button></header><div className="chat-log">{chatMessages.length === 0 && <small>{t("ยังไม่มีข้อความ เริ่มคุยกับเพื่อนได้เลย")}</small>}{chatMessages.map(m => <p key={m.id} className={m.playerId === onlineSession.playerId ? "mine" : ""}><strong>{m.name}</strong><span>{m.message}</span></p>)}</div><form onSubmit={e => { e.preventDefault(); submitChat(); }}><input autoFocus value={chatInput} maxLength={180} placeholder={t("พิมพ์แผนหรือข้อความถึงเพื่อน…")} onChange={e => setChatInput(e.target.value)} /><button type="submit">{t("ส่ง")}</button></form></section>}
     {started && !end && <>
-      <section className="mission"><span>{onlineSession ? <>ห้อง {onlineSession.code} • {hud.onlineCount}/4 คน <button className="copy-code" onClick={() => navigator.clipboard?.writeText(onlineSession.code)}>คัดลอกรหัส</button></> : "ภารกิจต่อเนื่อง"}</span><strong>{hud.quest}</strong><div className="progress-row"><i style={{ width: `${hud.questProgress}%` }} /></div></section>
-      <section className="legacy"><b>LV.{progress.level}</b><span>✦ {progress.coins} เหรียญ</span><small>XP {progress.xp % 100}/100</small><em>{randomQuest}</em><i>{progress.achievements.length} ความสำเร็จ • ความลับ {progress.secrets}/4 • ปลดล็อก {progress.unlocks}</i></section>
-      <section className="stats"><div className="vitals"><div className="health"><b>พลังชีวิต</b><span>{Math.round(hud.health)}</span><i><em style={{ width: `${hud.health}%` }} /></i></div>{hud.inWater && <div className="oxygen"><b>ออกซิเจน</b><span>{hud.oxygen}</span><i><em style={{ width: `${hud.oxygen}%` }} /></i></div>}</div><div className="time"><small>{hours >= 18 || hours < 6 ? "กลางคืน" : "กลางวัน"}</small><strong>{String(hours).padStart(2, "0")}:{String(mins).padStart(2, "0")}</strong></div></section>
-      <section className="inventory"><div><span className="resource scrap">◆</span><p><b>{hud.scrap}</b><small>โลหะ</small></p></div><div><span className="resource cell">◉</span><p><b>{hud.cells}</b><small>เซลล์</small></p></div><div><span className="resource">▰</span><p><b>{hud.wood}</b><small>ไม้</small></p></div><div><span className="resource">⬟</span><p><b>{hud.stone}</b><small>หิน</small></p></div></section>
-      <section className="minimap"><b>แผนที่สำรวจ</b><div>{(() => { const marker = minimapPosition(hud.mapX, hud.mapZ); return <><i className="island one" /><i className="island two" /><i className="bridge-dot" /><i className="player-dot" aria-label="ทิศทางการเคลื่อนที่" style={{ left: `${marker.x / 190 * 100}%`, top: `${marker.z / 76 * 100}%`, transform: `translate(-50%, -50%) rotate(${hud.mapRotation}deg)` }} /></>; })()}<span>ค้นพบ {hud.discoveries}/6 • หีบ {hud.treasure}/3</span></div></section>
-      <div className="message">{hud.message}</div>
-      {hud.nearTower && <button className="interact" onClick={() => repair.current()}><kbd>E</kbd><span>ซ่อมหอส่งสัญญาณ</span></button>}
-      {carryingRock && <div className={`aim-reticle ${aimingRock ? "active" : ""}`}><i /><span>{aimingRock ? "ปล่อยเมาส์ขวาเพื่อยกเลิก • คลิกซ้ายเพื่อโยนแรง" : "กดเมาส์ขวาค้างเพื่อเล็ง"}</span></div>}
-      <div className="desktop-hint"><kbd>WASD</kbd> เคลื่อนที่ <span>•</span> <kbd>G</kbd> ประตูดันเจี้ยน <span>•</span> <kbd>V</kbd> สร้างกำแพงฐาน <span>•</span> <kbd>L</kbd> บันไดป้อม <span>•</span> <kbd>B</kbd> ใช้กระเป๋า</div>
-      <div className="mobile-controls"><div className="dpad"><button onPointerDown={() => press("KeyW", true)} onPointerUp={() => press("KeyW", false)}>▲</button><button onPointerDown={() => press("KeyA", true)} onPointerUp={() => press("KeyA", false)}>◀</button><button onPointerDown={() => press("KeyS", true)} onPointerUp={() => press("KeyS", false)}>▼</button><button onPointerDown={() => press("KeyD", true)} onPointerUp={() => press("KeyD", false)}>▶</button></div><button className="jump" onPointerDown={() => press("Space", true)} onPointerUp={() => press("Space", false)}>{hud.inWater ? "ขึ้น" : "โดด"}</button><button className="run" onPointerDown={() => press("ShiftLeft", true)} onPointerUp={() => press("ShiftLeft", false)}>{hud.inWater ? "เร็ว" : "วิ่ง"}</button><button className="dive" onPointerDown={() => press("KeyC", true)} onPointerUp={() => press("KeyC", false)}>ดำน้ำ</button><button className="rock-action" onPointerDown={() => rockAction.current()}>{carryingRock ? "โยน" : "ยกหิน"}</button></div>
+      <section className="mission"><span>{onlineSession ? <>{t("ห้อง")} {onlineSession.code} • {hud.onlineCount}/4 {t("คน")} <button className="copy-code" onClick={() => navigator.clipboard?.writeText(onlineSession.code)}>{t("คัดลอกรหัส")}</button></> : t("ภารกิจต่อเนื่อง")}</span><strong>{t(hud.quest)}</strong><div className="progress-row"><i style={{ width: `${hud.questProgress}%` }} /></div></section>
+      <section className="legacy"><b>LV.{progress.level}</b><span>✦ {progress.coins} {language==="ja"?"コイン":"เหรียญ"}</span><small>XP {progress.xp % 100}/100</small><em>{t(randomQuest)}</em><i>{language==="ja"?`${progress.achievements.length} 実績 • 秘密 ${progress.secrets}/4 • 解放 ${progress.unlocks}`:`${progress.achievements.length} ความสำเร็จ • ความลับ ${progress.secrets}/4 • ปลดล็อก ${progress.unlocks}`}</i></section>
+      <section className="stats"><div className="vitals"><div className="health"><b>{t("พลังชีวิต")}</b><span>{Math.round(hud.health)}</span><i><em style={{ width: `${hud.health}%` }} /></i></div>{hud.inWater && <div className="oxygen"><b>{t("ออกซิเจน")}</b><span>{hud.oxygen}</span><i><em style={{ width: `${hud.oxygen}%` }} /></i></div>}</div><div className="time"><small>{t(hours >= 18 || hours < 6 ? "กลางคืน" : "กลางวัน")}</small><strong>{String(hours).padStart(2, "0")}:{String(mins).padStart(2, "0")}</strong></div></section>
+      <section className="inventory"><div><span className="resource scrap">◆</span><p><b>{hud.scrap}</b><small>{t("โลหะ")}</small></p></div><div><span className="resource cell">◉</span><p><b>{hud.cells}</b><small>{t("เซลล์")}</small></p></div><div><span className="resource">▰</span><p><b>{hud.wood}</b><small>{t("ไม้")}</small></p></div><div><span className="resource">⬟</span><p><b>{hud.stone}</b><small>{t("หิน")}</small></p></div></section>
+      <section className="minimap"><b>{t("แผนที่สำรวจ")}</b><div>{(() => { const marker = minimapPosition(hud.mapX, hud.mapZ); return <><i className="island one" /><i className="island two" /><i className="bridge-dot" /><i className="player-dot" aria-label={t("ทิศทางการเคลื่อนที่")} style={{ left: `${marker.x / 190 * 100}%`, top: `${marker.z / 76 * 100}%`, transform: `translate(-50%, -50%) rotate(${hud.mapRotation}deg)` }} /></>; })()}<span>{language==="ja"?`発見 ${hud.discoveries}/6 • 宝箱 ${hud.treasure}/3`:`ค้นพบ ${hud.discoveries}/6 • หีบ ${hud.treasure}/3`}</span></div></section>
+      <div className="message">{t(hud.message)}</div>
+      {hud.nearTower && <button className="interact" onClick={() => repair.current()}><kbd>E</kbd><span>{t("ซ่อมหอส่งสัญญาณ")}</span></button>}
+      {carryingRock && <div className={`aim-reticle ${aimingRock ? "active" : ""}`}><i /><span>{t(aimingRock ? "ปล่อยเมาส์ขวาเพื่อยกเลิก • คลิกซ้ายเพื่อโยนแรง" : "กดเมาส์ขวาค้างเพื่อเล็ง")}</span></div>}
+      <div className="desktop-hint"><kbd>WASD</kbd> {t("เคลื่อนที่")} <span>•</span> <kbd>G</kbd> {t("ประตูดันเจี้ยน")} <span>•</span> <kbd>V</kbd> {t("สร้างกำแพงฐาน")} <span>•</span> <kbd>L</kbd> {t("บันไดป้อม")} <span>•</span> <kbd>B</kbd> {t("ใช้กระเป๋า")}</div>
+      <div className="mobile-controls"><div className="dpad"><button onPointerDown={() => press("KeyW", true)} onPointerUp={() => press("KeyW", false)}>▲</button><button onPointerDown={() => press("KeyA", true)} onPointerUp={() => press("KeyA", false)}>◀</button><button onPointerDown={() => press("KeyS", true)} onPointerUp={() => press("KeyS", false)}>▼</button><button onPointerDown={() => press("KeyD", true)} onPointerUp={() => press("KeyD", false)}>▶</button></div><button className="jump" onPointerDown={() => press("Space", true)} onPointerUp={() => press("Space", false)}>{t(hud.inWater ? "ขึ้น" : "โดด")}</button><button className="run" onPointerDown={() => press("ShiftLeft", true)} onPointerUp={() => press("ShiftLeft", false)}>{t(hud.inWater ? "เร็ว" : "วิ่ง")}</button><button className="dive" onPointerDown={() => press("KeyC", true)} onPointerUp={() => press("KeyC", false)}>{t("ดำน้ำ")}</button><button className="rock-action" onPointerDown={() => rockAction.current()}>{t(carryingRock ? "โยน" : "ยกหิน")}</button></div>
     </>}
-    {!started&&!onlineSetup&&<div className="overlay"><div className="hero-card"><div className="eyebrow">3D SURVIVAL ADVENTURE</div><h1>เกาะนี้<br/><em>จดจำคุณ</em></h1><p>เรือของคุณอับปางกลางพายุ หอส่งสัญญาณเก่าคือความหวังเดียว — แต่เมื่อดวงอาทิตย์ลับขอบฟ้า บางสิ่งบนเกาะจะเริ่มตามล่า</p><div className="goal"><span>ภารกิจ</span><b>รวบรวมไม้ {previewQuest.wood} และหิน {previewQuest.stone} เพื่อสร้างแพ</b></div><div className="start-actions triple"><button className="secondary" onClick={openWardrobe}>ปรับแต่ง</button><button className="secondary online" onClick={()=>setOnlineSetup(true)}>เล่นออนไลน์</button><button className="primary" onClick={()=>setStarted(true)}>เล่นคนเดียว <span>→</span></button></div>{savedSession&&<button className="resume-room" onClick={()=>startOnline("resume")} disabled={connecting}>กลับเข้าห้อง {savedSession.code}</button>}<small>ออนไลน์รองรับห้องส่วนตัวสูงสุด 4 คน</small></div></div>}
+    {!started&&!onlineSetup&&<div className="overlay"><div className="hero-card"><label className="language-picker">言語 / ภาษา<select value={language} onChange={e=>setLanguage(e.target.value as Language)}><option value="th">ไทย</option><option value="ja">日本語</option></select></label><div className="eyebrow">3D SURVIVAL ADVENTURE</div><h1>{language==="ja"?"この島は":"เกาะนี้"}<br/><em>{language==="ja"?"あなたを覚えている":"จดจำคุณ"}</em></h1><p>{language==="ja"?"嵐で船が難破した。古い通信塔だけが希望だ。しかし日が沈むと、島の何かがあなたを追い始める。":"เรือของคุณอับปางกลางพายุ หอส่งสัญญาณเก่าคือความหวังเดียว — แต่เมื่อดวงอาทิตย์ลับขอบฟ้า บางสิ่งบนเกาะจะเริ่มตามล่า"}</p><div className="goal"><span>{t("ภารกิจ")}</span><b>{language==="ja"?`木材 ${previewQuest.wood} と石 ${previewQuest.stone} を集めていかだを作る`:`รวบรวมไม้ ${previewQuest.wood} และหิน ${previewQuest.stone} เพื่อสร้างแพ`}</b></div><div className="start-actions triple"><button className="secondary" onClick={openWardrobe}>{t("ปรับแต่ง")}</button><button className="secondary online" onClick={()=>setOnlineSetup(true)}>{t("เล่นออนไลน์")}</button><button className="primary" onClick={()=>setStarted(true)}>{t("เล่นคนเดียว")} <span>→</span></button></div>{savedSession&&<button className="resume-room" onClick={()=>startOnline("resume")} disabled={connecting}>{t("กลับเข้าห้อง")} {savedSession.code}</button>}<small>{t("ผู้เล่นสูงสุด 4 คน • รหัสห้องเป็นส่วนตัว")}</small></div></div>}
     {onlineSetup&&<div className="overlay"><div className="online-card"><button className="close-online" onClick={()=>setOnlineSetup(false)}>×</button><span className="eyebrow">PRIVATE CO-OP</span><h2>สำรวจเกาะกับเพื่อน</h2><p>สร้างห้องแล้วส่งรหัส 6 ตัวให้เพื่อน หรือกรอกรหัสที่ได้รับเพื่อเข้าร่วม</p><label>ชื่อผู้เล่น<input value={playerName} maxLength={18} onChange={e=>setPlayerName(e.target.value)}/></label><div className="online-actions"><button className="primary" disabled={connecting} onClick={()=>startOnline("create")}>สร้างห้องใหม่</button><div><input value={joinCode} maxLength={6} placeholder="รหัสห้อง" onChange={e=>setJoinCode(e.target.value.toUpperCase())}/><button className="secondary" disabled={connecting||joinCode.length<6} onClick={()=>startOnline("join")}>เข้าร่วม</button></div></div>{onlineError&&<div className="online-error">{onlineError}</div>}<small>{connecting?"กำลังเชื่อมต่อ…":"ผู้เล่นสูงสุด 4 คน • รหัสห้องเป็นส่วนตัว"}</small></div></div>}
     {end&&<div className="overlay"><div className={`end-card ${end}`}><span>{end==="won"?"SIGNAL RESTORED":"THE ISLAND REMEMBERS"}</span><h2>{end==="won"?"ส่งสัญญาณสำเร็จ":"คุณหายไปในความมืด"}</h2><p>{end==="won"?"แสงสีเขียวพุ่งผ่านหมอก เสียงตอบรับจากแผ่นดินใหญ่ดังขึ้น — คุณรอดชีวิตจาก Echo Island":"เมื่อแสงแรกมาถึง ชายหาดว่างเปล่า เหลือเพียงรอยเท้าที่วนกลับไปยังป่า"}</p><button className="primary" onClick={restart}>เล่นอีกครั้ง <span>↻</span></button></div></div>}
     {showHelp&&<div className="overlay"><div className="help-card"><button onClick={()=>setShowHelp(false)}>×</button><span>คู่มือนักสำรวจ</span><h2>วิธีเอาชีวิตรอด</h2><ol><li><b>สำรวจเกาะ</b><small>วัตถุที่มีแสงเรืองคือทรัพยากร เดินเข้าใกล้เพื่อเก็บ ใช้ Space เพื่อกระโดดข้ามสิ่งกีดขวาง</small></li><li><b>ว่ายน้ำและดำน้ำ</b><small>กด Shift เพื่อว่ายเร็วที่ผิวน้ำ กด C เพื่อดำน้ำ และกด Shift พร้อม C เพื่อว่ายเร็วใต้น้ำ กด Space เพื่อกลับขึ้นผิวน้ำ ระวังออกซิเจนหมดเพราะอาจจมน้ำได้</small></li><li><b>ใช้ก้อนหิน</b><small>เข้าใกล้หินก้อนเล็กแล้วกด F เพื่อยก คลิกซ้ายเพื่อโยน หรือกดเมาส์ขวาค้างเพื่อเล็งก่อนโยน หินทำให้เงามืดชะงักได้</small></li><li><b>เตรียมก่อนค่ำ</b><small>เงามืดแข็งแกร่งในเวลากลางคืน วิ่งหนีและรักษาระยะห่าง</small></li><li><b>กลับไปยังหอคอย</b><small>เมื่อมีเศษโลหะ 6 ชิ้นและเซลล์ 3 ก้อน กด E ที่แผงควบคุม</small></li></ol><button className="primary" onClick={()=>setShowHelp(false)}>เข้าใจแล้ว</button></div></div>}
-    {customizing&&<div className="overlay wardrobe-overlay"><CharacterPreview appearance={appearance}/><section className="wardrobe"><button className="close" onClick={()=>setCustomizing(false)}>×</button><div className="eyebrow">EXPLORER LOADOUT</div><h2>ปรับแต่งนักสำรวจ</h2><p>เลือกรูปลักษณ์และสรีระ การเปลี่ยนแปลงจะแสดงบนตัวละครและบันทึกโดยอัตโนมัติ</p><div className="shape-list">{shapeSlider("height","ความสูง","เตี้ย","สูง")}{shapeSlider("build","รูปร่าง","ผอม","อ้วน")}{shapeSlider("muscle","กล้ามเนื้อ","ธรรมดา","กำยำ")}</div><div className="look-list">{swatches("skin","สีผิว")}{swatches("shirt","เสื้อเดินป่า")}{swatches("pants","กางเกง")}{swatches("pack","กระเป๋า")}{swatches("hair","สีผม")}</div><div className="wardrobe-actions"><button className="reset-look" onClick={()=>setAppearance(DEFAULT_LOOK)}>คืนค่าเดิม</button><button className="primary" onClick={()=>setCustomizing(false)}>เสร็จเรียบร้อย <span>✓</span></button></div></section></div>}
+    {customizing&&<div className="overlay wardrobe-overlay"><CharacterPreview appearance={appearance} language={language}/><section className="wardrobe"><button className="close" onClick={()=>setCustomizing(false)}>×</button><div className="eyebrow">EXPLORER LOADOUT</div><h2>{t("ปรับแต่งนักสำรวจ")}</h2><p>{t("เลือกรูปลักษณ์และสรีระ การเปลี่ยนแปลงจะแสดงบนตัวละครและบันทึกโดยอัตโนมัติ")}</p><div className="character-styles"><button className={appearance.character!=="blocky"?"selected":""} onClick={()=>setAppearance(a=>({...a,character:"explorer"}))}>{language==="ja"?"探検家":"นักสำรวจ"}<small>{language==="ja"?"現在のキャラクター":"ตัวละครปัจจุบัน"}</small></button><button className={appearance.character==="blocky"?"selected":""} onClick={()=>setAppearance(a=>({...a,...BLOCKY_LOOK,skin:a.skin,shirt:a.shirt,pants:a.pants,pack:a.pack,hair:a.hair,character:"blocky"}))}>{language==="ja"?"ブロッキー・サバイバー":"ผู้รอดชีวิตทรงบล็อก"}<small>{language==="ja"?"Roblox風のブロック体型":"ตัวละครทรงบล็อกสไตล์ Roblox"}</small></button></div><div className="shape-list">{shapeSlider("height","ความสูง","เตี้ย","สูง")}{shapeSlider("build","รูปร่าง","ผอม","อ้วน")}{shapeSlider("muscle","กล้ามเนื้อ","ธรรมดา","กำยำ")}</div><div className="look-list">{swatches("skin","สีผิว")}{swatches("shirt","เสื้อเดินป่า")}{swatches("pants","กางเกง")}{swatches("pack","กระเป๋า")}{swatches("hair","สีผม")}</div><div className="wardrobe-actions"><button className="reset-look" onClick={()=>setAppearance(DEFAULT_LOOK)}>{t("คืนค่าเดิม")}</button><button className="primary" onClick={()=>setCustomizing(false)}>{t("เสร็จเรียบร้อย")} <span>✓</span></button></div></section></div>}
   </main>;
 }
 
-function CharacterPreview({appearance}:{appearance:Appearance}){
+function CharacterPreview({appearance,language}:{appearance:Appearance;language:Language}){
   const mount=useRef<HTMLDivElement>(null);
   const appearanceRef=useRef(appearance);
   appearanceRef.current=appearance;
@@ -636,14 +830,14 @@ function CharacterPreview({appearance}:{appearance:Appearance}){
     const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,powerPreference:"high-performance"});renderer.setPixelRatio(Math.min(devicePixelRatio,1.4));renderer.outputColorSpace=THREE.SRGBColorSpace;host.appendChild(renderer.domElement);
     scene.add(new THREE.HemisphereLight(0xcaffed,0x10201c,3));const key=new THREE.DirectionalLight(0xffe1b5,4);key.position.set(-4,6,-5);scene.add(key);
     const mat=(color:number)=>new THREE.MeshStandardMaterial({color,roughness:.72,flatShading:true});
-    const look=appearanceRef.current,skin=mat(look.skin),shirt=mat(look.shirt),pants=mat(look.pants),packMat=mat(look.pack),hairMat=mat(look.hair),boots=mat(0x17262b);
+    const look={...DEFAULT_LOOK,...appearanceRef.current},blocky=look.character==="blocky",skin=mat(look.skin),shirt=mat(look.shirt),pants=mat(look.pants),packMat=mat(look.pack),hairMat=mat(look.hair),boots=mat(0x17262b);
     const player=new THREE.Group();player.scale.setScalar(1);scene.add(player);
     const mesh=(geo:THREE.BufferGeometry,material:THREE.Material,x:number,y:number,z=0)=>{const m=new THREE.Mesh(geo,material);m.position.set(x,y,z);player.add(m);return m;};
-    const torso=mesh(new THREE.CapsuleGeometry(.43,.74,4,8),shirt,0,1.22);mesh(new THREE.BoxGeometry(.67,.78,.36),packMat,0,1.25,.43);mesh(new THREE.CylinderGeometry(.15,.17,.18,8),skin,0,1.83);const headPreview=mesh(new THREE.IcosahedronGeometry(.38,1),skin,0,2.12);const facePreviewMat=mat(0x1c1b1e);const facePreview=new THREE.Group();headPreview.add(facePreview);for(const x of [-.12,.12]){const eye=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),facePreviewMat);eye.position.set(x,.06,-.31);facePreview.add(eye);}const nose=new THREE.Mesh(new THREE.ConeGeometry(.045,.16,12),facePreviewMat);nose.rotation.x=Math.PI/2;nose.position.set(0,-.02,-.36);facePreview.add(nose);const mouth=new THREE.Mesh(new THREE.BoxGeometry(.18,.04,.02),facePreviewMat);mouth.position.set(0,-.18,-.32);facePreview.add(mouth);mesh(new THREE.SphereGeometry(.39,8,5,0,Math.PI*2,0,Math.PI*.48),hairMat,0,2.23);
-    const previewHarness=mat(0x17262b),previewBelt=mat(0x5b3d28);for(const x of [-.22,.22]){const strap=new THREE.Mesh(new THREE.BoxGeometry(.055,.72,.055),previewHarness);strap.position.set(x,1.3,-.39);strap.rotation.z=x*.16;player.add(strap);}const beltMesh=new THREE.Mesh(new THREE.BoxGeometry(.82,.14,.48,2,1,2),previewBelt);beltMesh.position.set(0,.88,0);player.add(beltMesh);for(const x of [-.4,.4]){const pouch=new THREE.Mesh(new THREE.BoxGeometry(.18,.22,.2,2,2,1),previewBelt);pouch.position.set(x,.84,-.28);player.add(pouch);}const collar=new THREE.Mesh(new THREE.TorusGeometry(.2,.055,6,12),shirt);collar.rotation.x=Math.PI/2;collar.position.y=1.86;player.add(collar);
-    const limb=(x:number,y:number,material:THREE.Material,length:number,radius:number)=>{const p=new THREE.Group();p.position.set(x,y,0);const m=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius*.9,length,7),material);m.position.y=-length/2;p.add(m);player.add(p);return p;};
+    const torso=mesh(blocky?new THREE.BoxGeometry(.78,.92,.46):new THREE.CapsuleGeometry(.43,.74,4,8),shirt,0,1.22);const backpackPreview=mesh(new THREE.BoxGeometry(.67,.78,.36),packMat,0,1.25,.43);backpackPreview.visible=!blocky;const blockyBackpackPreview=mesh(new THREE.BoxGeometry(.62,.68,.24,2,2,1),packMat,0,1.24,.34);blockyBackpackPreview.visible=blocky;mesh(new THREE.CylinderGeometry(.15,.17,.18,8),skin,0,1.83);const headPreview=mesh(blocky?new THREE.BoxGeometry(.72,.72,.72):new THREE.IcosahedronGeometry(.38,1),skin,0,2.12);const facePreviewMat=mat(0x1c1b1e);const facePreview=new THREE.Group();headPreview.add(facePreview);for(const x of [-.12,.12]){const eye=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),facePreviewMat);eye.position.set(x,.06,-.38);facePreview.add(eye);}const nose=new THREE.Mesh(new THREE.ConeGeometry(.045,.16,12),facePreviewMat);nose.rotation.x=-Math.PI/2;nose.position.set(0,-.02,-.43);nose.visible=true;facePreview.add(nose);const earGeo=new THREE.BoxGeometry(.12,.2,.12);for(const x of [-.39,.39]){const ear=new THREE.Mesh(earGeo,skin);ear.position.set(x,0,-.01);ear.visible=blocky;headPreview.add(ear);}const mouth=new THREE.Mesh(new THREE.BoxGeometry(.18,.04,.02),facePreviewMat);mouth.position.set(0,-.18,-.32);mouth.visible=!blocky;facePreview.add(mouth);if(blocky){const smile=new THREE.Mesh(new THREE.TorusGeometry(.13,.018,6,16,Math.PI),facePreviewMat);smile.rotation.z=Math.PI;smile.position.set(0,-.1,-.405);facePreview.add(smile);}mesh(blocky?new THREE.BoxGeometry(.76,.25,.76):new THREE.SphereGeometry(.39,8,5,0,Math.PI*2,0,Math.PI*.48),hairMat,0,blocky?2.56:2.23);
+    const previewHarness=mat(0x17262b),previewBelt=mat(0x5b3d28);for(const x of [-.22,.22]){const strap=new THREE.Mesh(new THREE.BoxGeometry(.055,.72,.055),previewHarness);strap.position.set(x,1.3,-.39);strap.rotation.z=x*.16;strap.visible=!blocky;player.add(strap);}for(const x of [-.2,.2]){const strap=new THREE.Mesh(new THREE.BoxGeometry(.07,.62,.035),shirt);strap.position.set(x,1.24,.205);strap.rotation.z=x*.12;strap.visible=blocky;player.add(strap);}const beltMesh=new THREE.Mesh(new THREE.BoxGeometry(.82,.14,.48,2,1,2),previewBelt);beltMesh.position.set(0,.88,0);beltMesh.visible=!blocky;player.add(beltMesh);for(const x of [-.4,.4]){const pouch=new THREE.Mesh(new THREE.BoxGeometry(.18,.22,.2,2,2,1),previewBelt);pouch.position.set(x,.84,-.28);pouch.visible=!blocky;player.add(pouch);}const collar=new THREE.Mesh(new THREE.TorusGeometry(.2,.055,6,12),shirt);collar.rotation.x=Math.PI/2;collar.position.y=1.86;collar.visible=!blocky;player.add(collar);
+    const limb=(x:number,y:number,material:THREE.Material,length:number,radius:number)=>{const p=new THREE.Group();p.position.set(x,y,0);if(blocky){const upper=new THREE.Mesh(new THREE.BoxGeometry(radius*2.35,length*.52,radius*2.35),material),lower=new THREE.Mesh(new THREE.BoxGeometry(radius*2.35,length*.48,radius*2.35),skin);upper.position.y=-length*.26;lower.position.y=-length*.76;p.add(upper,lower);}else{const m=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius*.9,length,7),material);m.position.y=-length/2;p.add(m);}player.add(p);return p;};
     const la=limb(-.56,1.58,shirt,.72,.13),ra=limb(.56,1.58,shirt,.72,.13),ll=limb(-.23,.82,pants,.83,.17),rl=limb(.23,.82,pants,.83,.17);
-    for(const x of [-.5,.5]){const shoulder=new THREE.Mesh(new THREE.SphereGeometry(.2,8,6),shirt);shoulder.position.set(x,1.58,0);shoulder.scale.set(1.05,.82,1);player.add(shoulder);}
+    for(const x of [-.5,.5]){const shoulder=new THREE.Mesh(blocky?new THREE.BoxGeometry(.28,.28,.48):new THREE.SphereGeometry(.2,8,6),shirt);shoulder.position.set(x,1.58,0);shoulder.scale.set(1.05,.82,1);player.add(shoulder);}
     const width=.78+look.build*.5,height=.82+look.height*.38,armScale=.82+look.muscle*.55;player.scale.set(width,height,width);torso.scale.set(1+look.muscle*.18,1,1+look.muscle*.18);la.scale.set(armScale,1,armScale);ra.scale.set(armScale,1,armScale);la.position.x=-(.48+look.build*.11+look.muscle*.07);ra.position.x=-la.position.x;
     const lh=new THREE.Mesh(new THREE.SphereGeometry(.14,7,6),skin);lh.position.y=-.75;la.add(lh);ra.add(lh.clone());const previewSole=mat(0x101b20),lb=new THREE.Mesh(new THREE.CapsuleGeometry(.16,.24,3,6),boots);lb.rotation.x=Math.PI/2;lb.position.set(0,-.84,-.16);lb.scale.set(1,1,1.12);ll.add(lb);const ls=new THREE.Mesh(new THREE.BoxGeometry(.3,.1,.5,2,1,2),previewSole);ls.position.set(0,-.98,-.16);ll.add(ls);rl.add(lb.clone(),ls.clone());
     const floor=new THREE.Mesh(new THREE.CircleGeometry(1.6,32),new THREE.MeshBasicMaterial({color:0x72edbd,transparent:true,opacity:.13}));floor.rotation.x=-Math.PI/2;floor.position.y=-.12;scene.add(floor);
@@ -651,5 +845,5 @@ function CharacterPreview({appearance}:{appearance:Appearance}){
     let raf=0;const start=performance.now();const draw=()=>{const t=(performance.now()-start)/1000,look=appearanceRef.current,nextWidth=.78+look.build*.5,nextHeight=.82+look.height*.38,nextArmScale=.82+look.muscle*.55;skin.color.setHex(look.skin);shirt.color.setHex(look.shirt);pants.color.setHex(look.pants);packMat.color.setHex(look.pack);hairMat.color.setHex(look.hair);player.scale.set(nextWidth,nextHeight,nextWidth);torso.scale.set(1+look.muscle*.18,1,1+look.muscle*.18);la.scale.set(nextArmScale,1,nextArmScale);ra.scale.set(nextArmScale,1,nextArmScale);la.position.x=-(.48+look.build*.11+look.muscle*.07);ra.position.x=-la.position.x;player.rotation.y=Math.sin(t*.55)*.55;player.position.y=Math.sin(t*1.4)*.025;renderer.render(scene,camera);raf=requestAnimationFrame(draw)};draw();
     return()=>{cancelAnimationFrame(raf);ro.disconnect();renderer.dispose();host.innerHTML="";};
   },[]);
-  return <div ref={mount} className="wardrobe-preview"><div><span>ตัวอย่างสด</span><small>โมเดลจะหมุนเพื่อดูด้านหน้าและกระเป๋า</small></div></div>;
+  return <div ref={mount} className="wardrobe-preview"><div><span>{language==="ja"?"ライブプレビュー":"ตัวอย่างสด"}</span><small>{language==="ja"?"モデルが回転して正面とバックパックを確認できます":"โมเดลจะหมุนเพื่อดูด้านหน้าและกระเป๋า"}</small></div></div>;
 }
