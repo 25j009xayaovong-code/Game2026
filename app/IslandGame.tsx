@@ -435,10 +435,8 @@ export default function IslandGame() {
     colliders.push({ x: 0, z: TOWER_Z, r: 2.05 }, { x: 2.4, z: TOWER_Z, r: 1.05 });
 
     const pickups: { id: number; mesh: THREE.Object3D; type: "scrap" | "cell"; taken: boolean; baseY: number }[] = [];
-    const spots = Array.from({ length: 40 }, (_, i) => { const second = i >= 20, cx = second ? SECOND_X : 0, a = rand(i + 810) * Math.PI * 2, r = 20 + rand(i + 920) * (second ? 82 : 188); return [cx + Math.cos(a) * r, Math.sin(a) * r]; });
-    spots.forEach(([x, z], i) => {
-      const type = i % 4 === 0 ? "cell" : "scrap";
-      const g = new THREE.Group(); g.position.set(x, surfaceHeight(x, z) + .8, z); scene.add(g);
+    const addPickup = (type: "scrap" | "cell", x: number, y: number, z: number) => {
+      const g = new THREE.Group(); g.position.set(x, y, z); scene.add(g);
       if (type === "cell") {
         const body = new THREE.Mesh(new THREE.CylinderGeometry(.34, .34, .85, 8), mat(0x56d8e8, 0.35, 0x178697)); body.rotation.z = Math.PI / 2; g.add(body);
         const ring = new THREE.Mesh(new THREE.TorusGeometry(.37, .07, 6, 12), mat(0xffd76a, 0.5, 0x8d5d10)); ring.rotation.y = Math.PI / 2; g.add(ring);
@@ -446,7 +444,18 @@ export default function IslandGame() {
         const body = new THREE.Mesh(new THREE.DodecahedronGeometry(.55, 0), mat(0xd59a54)); body.scale.set(1.2, .55, .8); g.add(body);
         const bolt = new THREE.Mesh(new THREE.CylinderGeometry(.12, .12, .75, 6), mat(0x42505a)); bolt.rotation.z = 1; g.add(bolt);
       }
-      pickups.push({ id: i, mesh: g, type, taken: false, baseY: g.position.y });
+      pickups.push({ id: pickups.length, mesh: g, type, taken: false, baseY: y });
+    };
+    const spots = Array.from({ length: 40 }, (_, i) => { const second = i >= 20, cx = second ? SECOND_X : 0, a = rand(i + 810) * Math.PI * 2, r = 20 + rand(i + 920) * (second ? 82 : 188); return [cx + Math.cos(a) * r, Math.sin(a) * r]; });
+    spots.forEach(([x, z], i) => {
+      const type = i % 4 === 0 ? "cell" : "scrap";
+      addPickup(type, x, surfaceHeight(x, z) + .8, z);
+    });
+    fortressBridges.forEach((bridge, i) => {
+      const t = .5;
+      const x = bridge.x1 + bridge.dx * t, z = bridge.z1 + bridge.dz * t;
+      const y = THREE.MathUtils.lerp(bridge.y1, bridge.y2, t) + .8;
+      addPickup(i % 2 === 0 ? "cell" : "scrap", x, y, z);
     });
     const survivalNodes:{mesh:THREE.Object3D;type:"wood"|"stone";taken:boolean}[]=[];for(let i=0;i<24;i++){const second=i>=12,cx=second?SECOND_X:0,a=rand(i+3100)*6.28,r=18+rand(i+3200)*(second?82:175),x=cx+Math.cos(a)*r,z=Math.sin(a)*r,ground=second?secondSurfaceHeight(x,z):surfaceHeight(x,z),type=i%2?"wood":"stone",g=new THREE.Group();g.position.set(x,ground+.45,z);if(type==="wood"){const log=new THREE.Mesh(new THREE.CylinderGeometry(.25,.32,1.5,7),mat(0x815333));log.rotation.z=Math.PI/2;g.add(log);}else g.add(new THREE.Mesh(new THREE.DodecahedronGeometry(.55,0),mat(0x89918c)));scene.add(g);survivalNodes.push({mesh:g,type,taken:false});}
     const treasureChests:{mesh:THREE.Group;taken:boolean}[]=[];[[-172,132],[148,-150],[SECOND_X+72,62]].forEach(([x,z])=>{const g=new THREE.Group();g.position.set(x,surfaceHeight(x,z)+.45,z);const box=new THREE.Mesh(new THREE.BoxGeometry(1.25,.75,.9),mat(0x7e4d28));g.add(box);const lid=new THREE.Mesh(new THREE.BoxGeometry(1.32,.28,.95),mat(0xd5a13d,0.55,0x714713));lid.position.y=.48;g.add(lid);scene.add(g);treasureChests.push({mesh:g,taken:false});});
