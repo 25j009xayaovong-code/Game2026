@@ -4,6 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
 type Hud = { health: number; oxygen: number; inWater: boolean; scrap: number; cells: number; wood:number; stone:number; treasure:number; discoveries:number; mapX:number; mapZ:number; mapRotation:number; quest:string; questProgress:number; time: number; message: string; nearTower: boolean; onlineCount: number };
+type DragonHud = { health: number; maxHealth: number; defeated: boolean } | null;
+type DragonRideState = "hidden" | "near" | "riding";
+type UpgradeId = "sling" | "fireArmor" | "sail";
+type UpgradeInventory = Record<UpgradeId, boolean>;
+const EMPTY_UPGRADES: UpgradeInventory = { sling: false, fireArmor: false, sail: false };
+const UPGRADE_COSTS: Record<UpgradeId, { wood: number; stone: number; scrap: number; cells: number }> = {
+  sling: { wood: 3, stone: 2, scrap: 0, cells: 0 },
+  fireArmor: { wood: 0, stone: 2, scrap: 3, cells: 1 },
+  sail: { wood: 4, stone: 1, scrap: 1, cells: 0 },
+};
 type Progress={coins:number;xp:number;level:number;runs:number;unlocks:number;achievements:string[];secrets:number;bestDiscoveries:number};
 type ColorKey="skin"|"shirt"|"pants"|"pack"|"hair";
 type CharacterStyle="explorer"|"blocky";
@@ -48,26 +58,7 @@ const TRANSLATIONS:Record<string,string>={
   "สร้างกำแพงฐาน":"拠点の壁を作る",
   "รวบรวมไม้ 4 และหิน 3 เพื่อสร้างแพ":"木材4個と石3個を集めていかだを作る",
   "สำรวจสองเกาะ ป้อมปราการ และหอสังเกตการณ์":"2つの島、要塞、見張り台を探索する",
-  "เคลื่อนที่":"移動",
-  "ประตูดันเจี้ยน":"ダンジョンの扉",
-  "บันไดป้อม":"要塞のはしご",
-  "ใช้กระเป๋า":"バックパックを使う",
-  "ขึ้น":"上昇",
-  "โดด":"ジャンプ",
-  "เร็ว":"速く泳ぐ",
-  "วิ่ง":"走る",
-  "ดำน้ำ":"潜水",
-  "โยน":"投げる",
-  "ยกหิน":"石を拾う",
-  "บันไดป้อม":"要塞のはしご",
-  "ใช้กระเป๋า":"バックパックを使う",
-  "ขึ้น":"上昇",
-  "โดด":"ジャンプ",
-  "เร็ว":"速く泳ぐ",
-  "วิ่ง":"走る",
-  "ดำน้ำ":"潜水",
-  "โยน":"投げる",
-  "ยกหิน":"石を拾う",
+
   "ภารกิจ":"ミッション",
   "ปรับแต่ง":"カスタマイズ",
   "เล่นออนไลน์":"オンラインで遊ぶ",
@@ -107,7 +98,6 @@ const TRANSLATIONS:Record<string,string>={
   "ภารกิจต่อเนื่อง":"継続ミッション",
   "ห้อง":"ルーム",
   "คน":"人",
-  "คัดลอกรหัส":"コードをコピー",
   "กด Q เพื่อคราฟต์แพ":"Qキーでいかだを作る",
   "ซ่อมหอส่งสัญญาณและเอาชีวิตรอด":"通信塔を修理して生き残る",
   "ค้นหาหีบสมบัติที่ซ่อนอยู่ทั้ง 3 ใบ":"隠された宝箱を3個探す",
@@ -145,6 +135,7 @@ const collectionQuestStatus=(quest:CollectionQuest,craftedRaft:boolean,wood:numb
   if(discoveries<quest.discoveries)return {quest:`ค้นพบสถานที่สำคัญบนแผนที่ ${quest.discoveries} แห่ง`,questProgress:discoveries/quest.discoveries*100};
   return {quest:"ซ่อมหอส่งสัญญาณและเอาชีวิตรอด",questProgress:Math.min(100,(scrap/quest.scrap+cells/quest.cells)*50)};
 };
+const INITIAL_PROGRESS: Progress = {coins:0,xp:0,level:1,runs:0,unlocks:0,achievements:[],secrets:0,bestDiscoveries:0};
 const INITIAL: Hud = { health: 100, oxygen: 100, inWater: false, scrap: 0, cells: 0, wood:0,stone:0,treasure:0,discoveries:0,mapX:0,mapZ:90,mapRotation:0,quest:"ภารกิจรวบรวมทรัพยากรแบบสุ่ม",questProgress:0,time: 0.08, message: "ค้นหาชิ้นส่วนบนเกาะ", nearTower: false, onlineCount: 1 };
 const COLOR_KEYS:ColorKey[]=["skin","shirt","pants","pack","hair"];
 const DEFAULT_LOOK:Appearance={skin:0xe7c4a1,shirt:0xf1a447,pants:0x263e49,pack:0x304b51,hair:0x2b211d,height:.5,build:.45,muscle:.35,character:"explorer"};
@@ -180,16 +171,20 @@ const surfaceHeight = (x: number, z: number) => { if (onBridge(x, z)) return BRI
 export default function IslandGame() {
   const mount = useRef<HTMLDivElement>(null);
   const keys = useRef<Record<string, boolean>>({});
-  const languageRef = useRef<Language>("th");
-  const languageEffectInitialized = useRef(false);
   const [language, setLanguage] = useState<Language>("th");
+  const [languageLoaded, setLanguageLoaded] = useState(false);
   const [started, setStarted] = useState(false);
   const [hud, setHud] = useState(INITIAL);
   const [end, setEnd] = useState<"won" | "lost" | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [showUpgrades, setShowUpgrades] = useState(false);
+  const [craftedUpgrades, setCraftedUpgrades] = useState<UpgradeInventory>(EMPTY_UPGRADES);
+  const [dragonHud, setDragonHud] = useState<DragonHud>(null);
+  const [dragonRideState, setDragonRideState] = useState<DragonRideState>("hidden");
   const [customizing,setCustomizing]=useState(false);
   const [carryingRock,setCarryingRock]=useState(false);
   const [aimingRock,setAimingRock]=useState(false);
+  const [aimingDragon,setAimingDragon]=useState(false);
   const [onlineSetup,setOnlineSetup]=useState(false);
   const [onlineSession,setOnlineSession]=useState<OnlineSession|null>(null);
   const [savedSession,setSavedSession]=useState<OnlineSession|null>(null);
@@ -204,40 +199,61 @@ export default function IslandGame() {
   const [chatMessages,setChatMessages]=useState<ChatMessage[]>([]);
   const [appearance,setAppearance]=useState<Appearance>(DEFAULT_LOOK);
   const [lookLoaded,setLookLoaded]=useState(false);
-  const [progress,setProgress]=useState<Progress>({coins:0,xp:0,level:1,runs:0,unlocks:0,achievements:[],secrets:0,bestDiscoveries:0});
+  const [progress,setProgress]=useState<Progress>(INITIAL_PROGRESS);
+  const [progressLoaded,setProgressLoaded]=useState(false);
   const progressRef=useRef(progress);
   const [previewQuest,setPreviewQuest]=useState<CollectionQuest>(()=>collectionQuestFor("solo-preview"));
+  const onlineSessionRef=useRef(onlineSession);
+  const previewQuestRef=useRef(previewQuest);
   const [randomQuest]=useState("ค้นหาความลับ 2 จุด");
   const repair = useRef<() => void>(() => {});
   const rockAction = useRef<() => void>(() => {});
+  const upgradeAction = useRef<(upgrade: UpgradeId) => void>(() => {});
+  const mountDragonAction = useRef<() => void>(() => {});
   const paused=useRef(false),appearanceRef=useRef(appearance),voiceToggle=useRef<()=>void>(()=>{}),chatSend=useRef<(message:string)=>void>(()=>{});
   const lookMaterials=useRef<Record<ColorKey,THREE.MeshStandardMaterial>|null>(null);
-  const bodyShape=useRef<{player:THREE.Group;body:THREE.Mesh;leftArm:THREE.Group;rightArm:THREE.Group}|null>(null);
+  const bodyShape=useRef<{player:THREE.Group;body:THREE.Mesh;leftArm:THREE.Group;rightArm:THREE.Group;setCharacter:(character:CharacterStyle)=>void}|null>(null);
 
   useEffect(()=>{
-    if(!languageEffectInitialized.current){
-      languageEffectInitialized.current=true;
-      try{if(localStorage.getItem("echo-island-language")==="ja"&&language==="th"){setLanguage("ja");return;}}catch{}
-    }
-    languageRef.current=language;
-    document.documentElement.lang=language;
-    try{localStorage.setItem("echo-island-language",language);}catch{}
-  },[language]);
-  useEffect(()=>{try{const saved=localStorage.getItem("echo-island-look");if(saved)setAppearance({...DEFAULT_LOOK,...JSON.parse(saved)});}catch{}setLookLoaded(true);},[]);
-  useEffect(()=>{try{const saved=localStorage.getItem("echo-island-room");if(saved)setSavedSession(JSON.parse(saved));const name=localStorage.getItem("echo-island-name");if(name)setPlayerName(name);}catch{}},[]);
-  useEffect(()=>{try{const saved=localStorage.getItem("echo-island-progress");if(saved){const value={...progress,...JSON.parse(saved)};setProgress(value);progressRef.current=value;}}catch{}},[]);
-  useEffect(()=>{progressRef.current=progress;localStorage.setItem("echo-island-progress",JSON.stringify(progress));},[progress]);
-  useEffect(()=>{appearanceRef.current=appearance;const m=lookMaterials.current;if(m)COLOR_KEYS.forEach(k=>m[k].color.setHex(appearance[k]));const s=bodyShape.current;if(s){const width=.78+appearance.build*.5,height=.82+appearance.height*.38,arms=.82+appearance.muscle*.55;s.player.scale.set(width,height,width);s.body.scale.set(1+appearance.muscle*.18,1,1+appearance.muscle*.18);s.leftArm.scale.set(arms,1,arms);s.rightArm.scale.set(arms,1,arms);s.leftArm.position.x=-(.48+appearance.build*.11+appearance.muscle*.07);s.rightArm.position.x=-s.leftArm.position.x;}if(lookLoaded)localStorage.setItem("echo-island-look",JSON.stringify(appearance));},[appearance,lookLoaded]);
-  useEffect(()=>{setPreviewQuest(collectionQuestFor());},[]);
-  useEffect(()=>{if(started)setProgress(p=>({...p,runs:p.runs+1}));},[started]);
-  useEffect(()=>{paused.current=customizing||showHelp||chatOpen;},[customizing,showHelp,chatOpen]);
+    let cancelled=false;
+    queueMicrotask(()=>{
+      if(cancelled)return;
+      try{const saved=localStorage.getItem("echo-island-language");if(saved==="ja")setLanguage("ja");}
+      catch(error){console.warn("Unable to restore the saved language.",error);}
+      finally{setLanguageLoaded(true);}
+      try{const saved=localStorage.getItem("echo-island-look");if(saved)setAppearance({...DEFAULT_LOOK,...JSON.parse(saved)});}
+      catch(error){console.warn("Unable to restore the saved character appearance.",error);}
+      finally{setLookLoaded(true);}
+      try{const saved=localStorage.getItem("echo-island-room");if(saved)setSavedSession(JSON.parse(saved));const name=localStorage.getItem("echo-island-name");if(name)setPlayerName(name);}
+      catch(error){console.warn("Unable to restore the saved multiplayer session.",error);}
+      try{const saved=localStorage.getItem("echo-island-progress");if(saved){const value={...INITIAL_PROGRESS,...JSON.parse(saved)};setProgress(value);progressRef.current=value;}}
+      catch(error){console.warn("Unable to restore saved game progress.",error);}
+      finally{setProgressLoaded(true);}
+      setPreviewQuest(collectionQuestFor());
+    });
+    return()=>{cancelled=true;};
+  },[]);
+  useEffect(()=>{document.documentElement.lang=language;if(languageLoaded){try{localStorage.setItem("echo-island-language",language);}catch(error){console.warn("Unable to save the selected language.",error);}}},[language,languageLoaded]);
+  useEffect(()=>{progressRef.current=progress;if(progressLoaded){try{localStorage.setItem("echo-island-progress",JSON.stringify(progress));}catch(error){console.warn("Unable to save game progress.",error);}}},[progress,progressLoaded]);
+  useEffect(()=>{appearanceRef.current=appearance;const m=lookMaterials.current;if(m)COLOR_KEYS.forEach(k=>m[k].color.setHex(appearance[k]));const s=bodyShape.current;if(s){const width=.78+appearance.build*.5,height=.82+appearance.height*.38,arms=.82+appearance.muscle*.55;s.setCharacter(appearance.character==="blocky"?"blocky":"explorer");s.player.scale.set(width,height,width);s.body.scale.set(1+appearance.muscle*.18,1,1+appearance.muscle*.18);s.leftArm.scale.set(arms,1,arms);s.rightArm.scale.set(arms,1,arms);s.leftArm.position.x=-(.48+appearance.build*.11+appearance.muscle*.07);s.rightArm.position.x=-s.leftArm.position.x;}if(lookLoaded){try{localStorage.setItem("echo-island-look",JSON.stringify(appearance));}catch(error){console.warn("Unable to save the selected character appearance.",error);}}},[appearance,lookLoaded]);
+  useEffect(()=>{onlineSessionRef.current=onlineSession;},[onlineSession]);
+  useEffect(()=>{previewQuestRef.current=previewQuest;},[previewQuest]);
+  useEffect(()=>{if(started)queueMicrotask(()=>setProgress(p=>({...p,runs:p.runs+1})));},[started]);
+  useEffect(()=>{paused.current=customizing||showHelp||showUpgrades||chatOpen;},[customizing,showHelp,showUpgrades,chatOpen]);
 
   useEffect(() => {
     if (!mount.current) return;
     const host = mount.current;
+    const runUpgrades: UpgradeInventory = { ...EMPTY_UPGRADES };
+    setCraftedUpgrades({ ...EMPTY_UPGRADES });
+    setDragonHud(null);
+    setDragonRideState("hidden");
+    const onlineSession = onlineSessionRef.current;
+    const previewQuest = previewQuestRef.current;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x91d6d0);
-    scene.fog = new THREE.FogExp2(0x91d6d0, 0.0032);
+    const fog = new THREE.FogExp2(0x91d6d0, 0.0032);
+    scene.fog = fog;
     const camera = new THREE.PerspectiveCamera(62, host.clientWidth / host.clientHeight, 0.1, 800);
     const lowPower = matchMedia("(pointer: coarse)").matches || innerWidth < 760 || (navigator.hardwareConcurrency ?? 8) <= 4;
     const renderer = new THREE.WebGLRenderer({ antialias: !lowPower, powerPreference: "high-performance" });
@@ -290,8 +306,9 @@ export default function IslandGame() {
     const rand = (n: number) => { const x = Math.sin(n * 9283.31) * 43758.5; return x - Math.floor(x); };
     const insideMaze = (x: number, z: number) => MAZE_ZONES.some(m => Math.abs(x - m.x) < m.half + 5 && Math.abs(z - m.z) < m.half + 5);
     // Circular ground colliders keep movement inexpensive and reliable on desktop and mobile.
-    const colliders: { x: number; z: number; r: number; minY?: number; maxY?: number }[] = [];
-    type ThrowableRock = { id: number; mesh: THREE.Mesh | null; velocity: THREE.Vector3 | null; held: boolean; radius: number; baseScale: THREE.Vector3; restPosition: THREE.Vector3; instanceIndex: number | null; collider: { x: number; z: number; r: number } | null };
+    const colliders: { x: number; z: number; r: number; minY?: number; maxY?: number; fortressWall?: boolean }[] = [];
+    const mazeWallColliders: { x1: number; z1: number; x2: number; z2: number; minY: number; maxY: number; radius: number }[] = [];
+    type ThrowableRock = { id: number; mesh: THREE.Mesh | null; velocity: THREE.Vector3 | null; held: boolean; hitDragon: boolean; radius: number; baseScale: THREE.Vector3; restPosition: THREE.Vector3; instanceIndex: number | null; collider: { x: number; z: number; r: number } | null };
     const throwableRocks: ThrowableRock[] = [];
     const rockMaterial = mat(0x65716b);
     // Instancing lets the expanded island stay dense without multiplying draw calls.
@@ -315,7 +332,7 @@ export default function IslandGame() {
       const rockHeight = size * (.55 + rand(i + 700));
       const ground = second ? secondSurfaceHeight(x, z) : surfaceHeight(x, z);
       dummy.position.set(x, ground + rockHeight * .72, z); dummy.rotation.set(rand(i) * 2, rand(i + 2) * 3, 0); dummy.scale.set(size, rockHeight, size * .9); dummy.updateMatrix(); rocks.setMatrixAt(i, dummy.matrix);
-      const collider = { x, z, r: Math.max(.5, size) }; colliders.push(collider); throwableRocks.push({ id: i, mesh: null, velocity: null, held: false, radius: Math.max(size, rockHeight), baseScale: new THREE.Vector3(size, rockHeight, size * .9), restPosition: dummy.position.clone(), instanceIndex: i, collider });
+      const collider = { x, z, r: Math.max(.5, size) }; colliders.push(collider); throwableRocks.push({ id: i, mesh: null, velocity: null, held: false, hitDragon: false, radius: Math.max(size, rockHeight), baseScale: new THREE.Vector3(size, rockHeight, size * .9), restPosition: dummy.position.clone(), instanceIndex: i, collider });
     }
 
     const shrubCount = 190, shrubs = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(.65, 0), mat(0x2f6b42), shrubCount); scene.add(shrubs);
@@ -338,7 +355,7 @@ export default function IslandGame() {
     const pinkMaze: MazeSegment[] = [[-25, -25, -25, 25], [-25, -25, -6, -25], [4, -25, 25, -25], [25, -25, 25, 25], [25, 25, 5, 25], [-5, 25, -25, 25], [-22, -21, -6, -21], [-1, -21, 21, -21], [21, -21, 21, 21], [21, 21, 5, 21], [-4, 21, -21, 21], [-21, 21, -21, 4], [-21, -4, -21, -21], [-21, 3, 0, 3], [0, 3, 0, 18], [0, 18, -9, 18], [-9, 18, -9, 10], [-15, 10, -4, 10], [-4, 10, -4, 16], [5, 21, 5, -16], [5, -16, 16, -16], [16, -16, 16, 16], [16, 16, 13, 16], [13, 16, 13, -10], [-14, -21, -14, -12], [-14, -12, -5, -12], [-5, -12, -5, -17], [-5, -17, -1, -17], [-1, -17, -1, -4], [-1, -4, -10, -4], [-10, -4, -10, -10], [-10, -10, -17, -10]];
     const darkMaze: MazeSegment[] = [[-25, -25, -25, 25], [-25, -25, -6, -25], [4, -25, 25, -25], [25, -25, 25, -5], [25, 4, 25, 25], [-25, 25, 25, 25], [-21, 21, -21, 2], [-21, -7, -21, -21], [-21, -21, -12, -21], [-12, -21, -12, -7], [-5, -7, -5, 20], [-5, 20, -21, 20], [-17, 16, -2, 16], [-17, 16, -17, 5], [-17, 5, -2, 5], [-2, 5, -2, 15], [-2, 15, 14, 15], [14, 15, 14, 11], [14, 11, 2, 11], [2, 11, 2, -17], [2, -17, 9, -17], [9, -17, 9, -8], [9, -8, 19, -8], [19, -8, 19, 8], [19, 8, 10, 8], [10, 8, 10, 4], [10, 4, 21, 4], [21, 4, 21, 21], [6, 20, 6, 13], [6, 20, 18, 20], [6, 1, 18, 1], [18, 1, 18, -4], [18, -4, 6, -4], [6, -4, 6, -13], [6, -13, 18, -13]];
     const arrowMaze: MazeSegment[] = [[-25, -25, -25, 21], [-25, 25, 25, 25], [25, 25, 25, -21], [25, -25, 4, -25], [-4, -25, -25, -25], [-20, 15, -10, 15], [-20, 15, -20, 5], [-20, 5, -7, 5], [-7, 5, -7, 25], [-20, -5, -13, -5], [-13, -5, -13, 4], [-20, -16, -7, -16], [-7, -16, -7, -6], [-7, -6, -1, -6], [-1, -6, -1, 5], [-1, 5, -4, 5], [-4, 5, -4, 15], [-4, 15, -1, 15], [-1, 15, -1, 5], [4, 15, 13, 15], [13, 15, 13, 5], [13, 5, 17, 5], [17, 5, 17, 15], [17, 15, 21, 15], [21, 15, 21, 5], [21, 5, 25, 5], [4, 5, 8, 5], [8, 5, 8, -5], [8, -5, 16, -5], [16, -5, 16, 4], [4, -5, 4, -16], [4, -16, 12, -16], [12, -16, 12, -6], [17, -16, 25, -16]];
-    const buildMaze = (zone: { x: number; z: number; half: number }, segments: MazeSegment[], color: number, accent: number) => { const y = surfaceHeight(zone.x, zone.z); const floor = addMesh(new THREE.BoxGeometry(60, .5, 60), mat(accent), zone.x, y - .22, zone.z); floor.receiveShadow = !lowPower; const wallMat = mat(color, .9); for (const [x1, z1, x2, z2] of segments) { const dx = x2 - x1, dz = z2 - z1, length = Math.hypot(dx, dz), cx = zone.x + (x1 + x2) / 2, cz = zone.z + (z1 + z2) / 2, wall = addMesh(new THREE.BoxGeometry(length + 1, 3.8, 1.15), wallMat, cx, y + 1.85, cz); wall.rotation.y = -Math.atan2(dz, dx); const steps = Math.ceil(length / 1.25); for (let i = 0; i <= steps; i++) { const t = i / steps; colliders.push({ x: zone.x + THREE.MathUtils.lerp(x1, x2, t), z: zone.z + THREE.MathUtils.lerp(z1, z2, t), r: .62 }); } } };
+    const buildMaze = (zone: { x: number; z: number; half: number }, segments: MazeSegment[], color: number, accent: number) => { const y = surfaceHeight(zone.x, zone.z); const floor = addMesh(new THREE.BoxGeometry(60, .5, 60), mat(accent), zone.x, y - .22, zone.z); floor.receiveShadow = !lowPower; const wallMat = mat(color, .9); for (const [x1, z1, x2, z2] of segments) { const dx = x2 - x1, dz = z2 - z1, length = Math.hypot(dx, dz), cx = zone.x + (x1 + x2) / 2, cz = zone.z + (z1 + z2) / 2, wall = addMesh(new THREE.BoxGeometry(length + 1, 3.8, 1.15), wallMat, cx, y + 1.85, cz); wall.rotation.y = -Math.atan2(dz, dx); const halfLength = (length + 1) / 2, directionX = dx / length, directionZ = dz / length; mazeWallColliders.push({ x1: cx - directionX * halfLength, z1: cz - directionZ * halfLength, x2: cx + directionX * halfLength, z2: cz + directionZ * halfLength, minY: y - .05, maxY: y + 3.75, radius: .575 }); const steps = Math.ceil(length / 1.25); for (let i = 0; i <= steps; i++) { const t = i / steps; colliders.push({ x: zone.x + THREE.MathUtils.lerp(x1, x2, t), z: zone.z + THREE.MathUtils.lerp(z1, z2, t), r: .62 }); } } };
     buildMaze(MAZE_ZONES[0], pinkMaze, 0xd82d86, 0x567b4c); buildMaze(MAZE_ZONES[1], darkMaze, 0x26313a, 0x6f8059); buildMaze(MAZE_ZONES[2], arrowMaze, 0x111514, 0x7b8a55);
     // A climbable observation pillar overlooks both islands and all three bridges.
     const OBS_X = SECOND_X + 18, OBS_Z = 12, obsGround = secondSurfaceHeight(OBS_X, OBS_Z), OBS_HEIGHT = 30;
@@ -353,14 +370,15 @@ export default function IslandGame() {
     const fortressPositions: [number, number][] = [[-178, -42], [172, 72], [-42, 178], [SECOND_X - 62, -68], [SECOND_X + 64, 52], [SECOND_X, -84]];
     const bridgeLinks: [number, number][] = [[0, 1], [1, 2], [1, 4], [3, 4]];
     const specialFortressHeight = 156;
+    const maxDragonFlightHeight = specialFortressHeight + 24;
     fortressPositions.forEach(([x, z], i) => {
       const heights = [52, 58, 55, 78, 60, specialFortressHeight], isSpecial = i === 5, onSecond = i >= 3, ground = onSecond ? secondSurfaceHeight(x, z) : surfaceHeight(x, z), height = heights[i], radius = isSpecial ? 10.5 : 5.2, ladderZ = z - radius - .45; fortresses.push({ x, z, ground, height, radius, ladderZ });
       const timber = mat(isSpecial ? 0x8d5a24 : i % 2 ? 0x765035 : 0x67452f), stone = mat(isSpecial ? 0x8a8068 : 0x59635c), banner = mat(isSpecial ? 0xf1c453 : i % 2 ? 0x2aa98f : 0xb85b42, .75);
       const bridgeAngles = bridgeLinks.flatMap(([fromIndex, toIndex]) => { if (fromIndex !== i && toIndex !== i) return []; const [targetX, targetZ] = fortressPositions[fromIndex === i ? toIndex : fromIndex]; return [Math.atan2(targetZ - z, targetX - x)]; });
       addMesh(new THREE.CylinderGeometry(radius, radius + .7, 1.1, 12), stone, x, ground + .5, z);
-      for (let p = 0; p < 12; p++) { const a = p / 12 * Math.PI * 2, px = x + Math.cos(a) * (radius - .25), pz = z + Math.sin(a) * (radius - .25), southEntrance = Math.abs(Math.atan2(Math.sin(a + Math.PI / 2), Math.cos(a + Math.PI / 2))) < .24, bridgeEntrance = bridgeAngles.some(angle => Math.abs(Math.atan2(Math.sin(a - angle), Math.cos(a - angle))) < .3); if (!southEntrance && !bridgeEntrance) { addMesh(new THREE.BoxGeometry(1.2, height, .8), timber, px, ground + height / 2, pz).rotation.y = -a; colliders.push({ x: px, z: pz, r: .75 }); } }
+      for (let p = 0; p < 12; p++) { const a = p / 12 * Math.PI * 2, px = x + Math.cos(a) * (radius - .25), pz = z + Math.sin(a) * (radius - .25), southEntrance = Math.abs(Math.atan2(Math.sin(a + Math.PI / 2), Math.cos(a + Math.PI / 2))) < .24, bridgeEntrance = bridgeAngles.some(angle => Math.abs(Math.atan2(Math.sin(a - angle), Math.cos(a - angle))) < .3); if (!southEntrance && !bridgeEntrance) { addMesh(new THREE.BoxGeometry(1.2, height, .8), timber, px, ground + height / 2, pz).rotation.y = -a; colliders.push({ x: px, z: pz, r: .75, fortressWall: true }); } }
       const deck = addMesh(new THREE.CylinderGeometry(radius + 1, radius + 1, .75, 12), timber, x, ground + height, z); deck.receiveShadow = !lowPower;
-      for (let p = 0; p < 12; p++) { const a = p / 12 * Math.PI * 2, px = x + Math.cos(a) * (radius + .15), pz = z + Math.sin(a) * (radius + .15), southEntrance = Math.abs(Math.atan2(Math.sin(a + Math.PI / 2), Math.cos(a + Math.PI / 2))) < .24, bridgeEntrance = bridgeAngles.some(angle => Math.abs(Math.atan2(Math.sin(a - angle), Math.cos(a - angle))) < .3); if (!southEntrance && !bridgeEntrance) { addMesh(new THREE.BoxGeometry(1.8, 1.5, .65), stone, px, ground + height + 1, pz).rotation.y = -a; colliders.push({ x: px, z: pz, r: .92 }); } }
+      for (let p = 0; p < 12; p++) { const a = p / 12 * Math.PI * 2, px = x + Math.cos(a) * (radius + .15), pz = z + Math.sin(a) * (radius + .15), southEntrance = Math.abs(Math.atan2(Math.sin(a + Math.PI / 2), Math.cos(a + Math.PI / 2))) < .24, bridgeEntrance = bridgeAngles.some(angle => Math.abs(Math.atan2(Math.sin(a - angle), Math.cos(a - angle))) < .3); if (!southEntrance && !bridgeEntrance) { addMesh(new THREE.BoxGeometry(1.8, 1.5, .65), stone, px, ground + height + 1, pz).rotation.y = -a; colliders.push({ x: px, z: pz, r: .92, fortressWall: true }); } }
       const flagPole = addMesh(new THREE.CylinderGeometry(.08, .1, 5, 6), stone, x, ground + height + 2.5, z); flagPole.castShadow = !lowPower; const flag = addMesh(new THREE.BoxGeometry(2.2, 1.15, .08), banner, x + 1.05, ground + height + 4, z); flag.rotation.y = i * .75;
       if (isSpecial) {
         const stairRadius = radius + 2.2, stairTurns = 3.5, stairCount = Math.ceil((height - specialStairStart) / specialStairRise);
@@ -382,7 +400,7 @@ export default function IslandGame() {
         for (let y = .8; y < height + .2; y += 1.45)addMesh(new THREE.BoxGeometry(1.55, .14, .2), stone, x, ground + y, ladderZ - .02);
       }
       // The circular wall remains solid except at the ladder entrance.
-      for (let p = 0; p < 24; p++) { const a = p / 24 * Math.PI * 2, southEntrance = Math.abs(Math.atan2(Math.sin(a + Math.PI / 2), Math.cos(a + Math.PI / 2))) < .24, bridgeEntrance = bridgeAngles.some(angle => Math.abs(Math.atan2(Math.sin(a - angle), Math.cos(a - angle))) < .3); if (southEntrance || bridgeEntrance) continue; colliders.push({ x: x + Math.cos(a) * radius, z: z + Math.sin(a) * radius, r: .52 }); }
+      for (let p = 0; p < 24; p++) { const a = p / 24 * Math.PI * 2, southEntrance = Math.abs(Math.atan2(Math.sin(a + Math.PI / 2), Math.cos(a + Math.PI / 2))) < .24, bridgeEntrance = bridgeAngles.some(angle => Math.abs(Math.atan2(Math.sin(a - angle), Math.cos(a - angle))) < .3); if (southEntrance || bridgeEntrance) continue; colliders.push({ x: x + Math.cos(a) * radius, z: z + Math.sin(a) * radius, r: .52, fortressWall: true }); }
     });
     type FortressBridge = { x1: number; z1: number; y1: number; x2: number; z2: number; y2: number; length: number; dx: number; dz: number };
     const fortressBridges: FortressBridge[] = [];
@@ -412,7 +430,7 @@ export default function IslandGame() {
     // A three-floor underground dungeon beneath the main island. The glowing
     // stair seals move the player between floors without exposing the rooms
     // through the terrain above.
-    const DUNGEON_X = 42, DUNGEON_Z = 28, DUNGEON_LEVELS = [-18, -36, -54], dungeonStone = mat(0x252c32), dungeonFloor = mat(0x3c4649), dungeonGlow = mat(0x55e6bd, .35, 0x1b8f75), dungeonColliders: { x: number; z: number; floor: number; r: number }[] = [];
+    const DUNGEON_X = 42, DUNGEON_Z = 28, DUNGEON_LEVELS = [-18, -36, -54], dungeonStone = mat(0x252c32), dungeonFloor = mat(0x3c4649), dungeonColliders: { x: number; z: number; floor: number; r: number }[] = [];
     const dmesh = (geo: THREE.BufferGeometry, material: THREE.Material, x = 0, y = 0, z = 0) => { const m = addMesh(geo, material, x, y, z); m.castShadow = false; m.receiveShadow = false; return m; };
     const hatchY = surfaceHeight(DUNGEON_X, DUNGEON_Z), entranceVoid = dmesh(new THREE.BoxGeometry(6, .08, 9), new THREE.MeshBasicMaterial({ color: 0x050809 }), DUNGEON_X, hatchY + .05, DUNGEON_Z + 4.5); for (const x of [-3.25, 3.25]) dmesh(new THREE.BoxGeometry(.45, 2.4, 10), dungeonStone, DUNGEON_X + x, hatchY + 1.1, DUNGEON_Z + 4.5); dmesh(new THREE.BoxGeometry(7, 2.4, .45), dungeonStone, DUNGEON_X, hatchY + 1.1, DUNGEON_Z - 0.3); entranceVoid.renderOrder = 2;
     const mazeLines = [[-28, -18, 18, -18], [-18, -8, 30, -8], [-30, 2, 12, 2], [-12, 12, 30, 12], [0, -26, 0, -8], [18, -18, 18, 2], [-20, 2, -20, 22], [10, 12, 10, 26]];
@@ -459,8 +477,8 @@ export default function IslandGame() {
     });
     const survivalNodes:{mesh:THREE.Object3D;type:"wood"|"stone";taken:boolean}[]=[];for(let i=0;i<24;i++){const second=i>=12,cx=second?SECOND_X:0,a=rand(i+3100)*6.28,r=18+rand(i+3200)*(second?82:175),x=cx+Math.cos(a)*r,z=Math.sin(a)*r,ground=second?secondSurfaceHeight(x,z):surfaceHeight(x,z),type=i%2?"wood":"stone",g=new THREE.Group();g.position.set(x,ground+.45,z);if(type==="wood"){const log=new THREE.Mesh(new THREE.CylinderGeometry(.25,.32,1.5,7),mat(0x815333));log.rotation.z=Math.PI/2;g.add(log);}else g.add(new THREE.Mesh(new THREE.DodecahedronGeometry(.55,0),mat(0x89918c)));scene.add(g);survivalNodes.push({mesh:g,type,taken:false});}
     const treasureChests:{mesh:THREE.Group;taken:boolean}[]=[];[[-172,132],[148,-150],[SECOND_X+72,62]].forEach(([x,z])=>{const g=new THREE.Group();g.position.set(x,surfaceHeight(x,z)+.45,z);const box=new THREE.Mesh(new THREE.BoxGeometry(1.25,.75,.9),mat(0x7e4d28));g.add(box);const lid=new THREE.Mesh(new THREE.BoxGeometry(1.32,.28,.95),mat(0xd5a13d,0.55,0x714713));lid.position.y=.48;g.add(lid);scene.add(g);treasureChests.push({mesh:g,taken:false});});
-    const animals:THREE.Group[]=[];for(let i=0;i<18;i++){const g=new THREE.Group(),second=i>=6,cx=second?SECOND_X:0,a=rand(i+3500)*6.28,r=28+rand(i+3600)*(second?72:120);g.position.set(cx+Math.cos(a)*r,0,Math.sin(a)*r);const bodyA=new THREE.Mesh(new THREE.CapsuleGeometry(.35,.7,3,6),mat(i%3===0?0xd0a76a:i%2?0xb98252:0x9c6b43));bodyA.rotation.z=Math.PI/2;bodyA.position.y=.75;g.add(bodyA);const headA=new THREE.Mesh(new THREE.IcosahedronGeometry(.28,0),bodyA.material);headA.position.set(.65,1.05,0);g.add(headA);const legs:THREE.Mesh[]=[];for(const x of [-.38,.38])for(const z of [-.2,.2]){const legA=new THREE.Mesh(new THREE.CylinderGeometry(.06,.07,.65,5),mat(0x5c3d29));legA.position.set(x,.35,z);g.add(legA);legs.push(legA);}g.userData.legs=legs;g.userData.body=bodyA;scene.add(g);animals.push(g);}
-    const fish:THREE.Mesh[]=[];for(let i=0;i<18;i++){const f=new THREE.Mesh(new THREE.ConeGeometry(.22,.8,6),mat(i%3===0?0xffc85a:0x49a9b7));f.rotation.z=Math.PI/2;f.position.set(235+rand(i)*200,OCEAN_LEVEL-1.8-rand(i+2)*3,(rand(i+3)-.5)*120);scene.add(f);fish.push(f);}
+    const animals:THREE.Group[]=[];for(let i=0;i<18;i++){const g=new THREE.Group(),second=i>=6,cx=second?SECOND_X:0,a=rand(i+3500)*6.28,r=28+rand(i+3600)*(second?72:120);g.position.set(cx+Math.cos(a)*r,0,Math.sin(a)*r);const bodyA=new THREE.Mesh(new THREE.CapsuleGeometry(.35,.7,3,6),mat(i%3===0?0xd0a76a:i%2?0xb98252:0x9c6b43));bodyA.rotation.z=Math.PI/2;bodyA.position.y=.75;g.add(bodyA);const headA=new THREE.Mesh(new THREE.IcosahedronGeometry(.28,0),bodyA.material);headA.position.set(.65,1.05,0);g.add(headA);const legs:THREE.Mesh[]=[];for(const x of [-.38,.38])for(const z of [-.2,.2]){const legA=new THREE.Mesh(new THREE.CylinderGeometry(.06,.07,.65,5),mat(0x5c3d29));legA.position.set(x,.35,z);g.add(legA);legs.push(legA);}g.userData.legs=legs;g.userData.body=bodyA;g.userData.health=3;g.userData.dead=false;scene.add(g);animals.push(g);}
+    const fish:THREE.Mesh[]=[];for(let i=0;i<18;i++){const f=new THREE.Mesh(new THREE.ConeGeometry(.22,.8,6),mat(i%3===0?0xffc85a:0x49a9b7));f.rotation.z=Math.PI/2;f.position.set(235+rand(i)*200,OCEAN_LEVEL-1.8-rand(i+2)*3,(rand(i+3)-.5)*120);f.userData.health=1;f.userData.dead=false;scene.add(f);fish.push(f);}
     const raft=new THREE.Group();for(let i=-2;i<=2;i++){const log=new THREE.Mesh(new THREE.CylinderGeometry(.28,.34,3.8,7),mat(0x815333));log.rotation.x=Math.PI/2;log.position.x=i*.58;raft.add(log);}const mast=new THREE.Mesh(new THREE.CylinderGeometry(.08,.1,3.2,6),mat(0x5b3c25));mast.position.y=1.55;raft.add(mast);const sail=new THREE.Mesh(new THREE.PlaneGeometry(2.2,2),mat(0xe8d7ad));sail.position.set(.95,2,0);sail.rotation.y=Math.PI/2;raft.add(sail);raft.position.set(232,OCEAN_LEVEL+.15,12);raft.visible=false;scene.add(raft);
 /*
     const survivalNodes: { mesh: THREE.Object3D; type: "wood" | "stone"; taken: boolean }[] = []; for (let i = 0; i < 24; i++) { const second = i >= 12, cx = second ? SECOND_X : 0, a = rand(i + 3100) * 6.28, r = 18 + rand(i + 3200) * (second ? 82 : 175), x = cx + Math.cos(a) * r, z = Math.sin(a) * r, type = i % 2 ? "wood" : "stone", g = new THREE.Group(); g.position.set(x, surfaceHeight(x, z) + .45, z); if (type === "wood") { const log = new THREE.Mesh(new THREE.CylinderGeometry(.25, .32, 1.5, 7), mat(0x815333)); log.rotation.z = Math.PI / 2; g.add(log); } else g.add(new THREE.Mesh(new THREE.DodecahedronGeometry(.55, 0), mat(0x89918c))); scene.add(g); survivalNodes.push({ mesh: g, type, taken: false }); }
@@ -475,41 +493,50 @@ export default function IslandGame() {
     const blocky=look.character==="blocky";
     const shirt=mat(look.shirt), skin=mat(look.skin), pants=mat(look.pants), packMat=mat(look.pack), hairMat=mat(look.hair), boot=mat(0x17262b);
     lookMaterials.current={shirt,skin,pants,pack:packMat,hair:hairMat};
-    const body=new THREE.Mesh(blocky?new THREE.BoxGeometry(.78,.92,.46):new THREE.CapsuleGeometry(.42,.62,5,8),shirt);body.position.y=1.27;body.castShadow=true;model.add(body);
-    const pack=new THREE.Mesh(new THREE.BoxGeometry(.62,.74,.34,3,3,2),packMat);pack.position.set(0,1.27,.42);pack.castShadow=true;pack.visible=!blocky;model.add(pack);
-    const blockyPack=new THREE.Mesh(new THREE.BoxGeometry(.62,.68,.24,2,2,1),packMat);blockyPack.position.set(0,1.26,.34);blockyPack.castShadow=true;blockyPack.visible=blocky;model.add(blockyPack);
-    const packFlap=new THREE.Mesh(new THREE.BoxGeometry(.54,.2,.1,2,2,1),packMat);packFlap.position.set(0,1.5,.62);packFlap.castShadow=true;packFlap.visible=!blocky;model.add(packFlap);
+    const styleUpdates:Array<(character:CharacterStyle)=>void>=[];
+    let activeCharacter:CharacterStyle=blocky?"blocky":"explorer";
+    const styleObject=(object:THREE.Object3D,character:CharacterStyle)=>{object.userData.characterStyle=character;return object;};
+    const styleGeometry=(mesh:THREE.Mesh,explorer:THREE.BufferGeometry,blockyGeometry:THREE.BufferGeometry)=>styleUpdates.push(character=>{mesh.geometry=character==="blocky"?blockyGeometry:explorer;});
+    const bodyGeometries={explorer:new THREE.CapsuleGeometry(.42,.62,5,8),blocky:new THREE.BoxGeometry(.78,.92,.46)};
+    const body=new THREE.Mesh(bodyGeometries[activeCharacter],shirt);styleGeometry(body,bodyGeometries.explorer,bodyGeometries.blocky);body.position.y=1.27;body.castShadow=true;model.add(body);
+    const pack=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.62,.74,.34,3,3,2),packMat),"explorer");pack.position.set(0,1.27,.42);pack.castShadow=true;pack.visible=!blocky;model.add(pack);
+    const blockyPack=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.62,.68,.24,2,2,1),packMat),"blocky");blockyPack.position.set(0,1.26,.34);blockyPack.castShadow=true;blockyPack.visible=blocky;model.add(blockyPack);
+    const packFlap=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.54,.2,.1,2,2,1),packMat),"explorer");packFlap.position.set(0,1.5,.62);packFlap.castShadow=true;packFlap.visible=!blocky;model.add(packFlap);
     const harness=mat(0x17262b),belt=mat(0x5b3d28);
-    for(const x of [-.22,.22]){const strap=new THREE.Mesh(new THREE.BoxGeometry(.055,.72,.055),harness);strap.position.set(x,1.3,-.39);strap.rotation.z=x*.16;strap.visible=!blocky;model.add(strap);}
-    const beltMesh=new THREE.Mesh(new THREE.BoxGeometry(.82,.14,.48,2,1,2),belt);beltMesh.position.set(0,.88,0);beltMesh.castShadow=true;beltMesh.visible=!blocky;model.add(beltMesh);
-    for(const x of [-.4,.4]){const pouch=new THREE.Mesh(new THREE.BoxGeometry(.18,.22,.2,2,2,1),belt);pouch.position.set(x,.84,-.28);pouch.castShadow=true;pouch.visible=!blocky;model.add(pouch);}
-    const bedroll=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,.72,8),boot);bedroll.rotation.z=Math.PI/2;bedroll.position.set(0,.82,.55);bedroll.visible=!blocky;model.add(bedroll);
-    for(const x of [-.23,.23]){const strap=new THREE.Mesh(new THREE.BoxGeometry(.06,.72,.05),boot);strap.position.set(x,1.25,.64);strap.visible=!blocky;model.add(strap);}
-    for(const x of [-.2,.2]){const strap=new THREE.Mesh(new THREE.BoxGeometry(.07,.62,.035),harness);strap.position.set(x,1.28,.205);strap.rotation.z=x*.12;strap.visible=blocky;model.add(strap);}
+    for(const x of [-.22,.22]){const strap=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.055,.72,.055),harness),"explorer");strap.position.set(x,1.3,-.39);strap.rotation.z=x*.16;strap.visible=!blocky;model.add(strap);}
+    const beltMesh=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.82,.14,.48,2,1,2),belt),"explorer");beltMesh.position.set(0,.88,0);beltMesh.castShadow=true;beltMesh.visible=!blocky;model.add(beltMesh);
+    for(const x of [-.4,.4]){const pouch=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.18,.22,.2,2,2,1),belt),"explorer");pouch.position.set(x,.84,-.28);pouch.castShadow=true;pouch.visible=!blocky;model.add(pouch);}
+    const bedroll=styleObject(new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,.72,8),boot),"explorer");bedroll.rotation.z=Math.PI/2;bedroll.position.set(0,.82,.55);bedroll.visible=!blocky;model.add(bedroll);
+    for(const x of [-.23,.23]){const strap=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.06,.72,.05),boot),"explorer");strap.position.set(x,1.25,.64);strap.visible=!blocky;model.add(strap);}
+    for(const x of [-.2,.2]){const strap=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.07,.62,.035),harness),"blocky");strap.position.set(x,1.28,.205);strap.rotation.z=x*.12;strap.visible=blocky;model.add(strap);}
     const neck=new THREE.Mesh(new THREE.CylinderGeometry(.15,.17,.18,8),skin);neck.position.y=1.83;model.add(neck);
-    const head=new THREE.Mesh(blocky?new THREE.BoxGeometry(.72,.72,.72):new THREE.IcosahedronGeometry(.38,1),skin);head.position.y=2.12;head.castShadow=true;model.add(head);
+    const headGeometries={explorer:new THREE.IcosahedronGeometry(.38,1),blocky:new THREE.BoxGeometry(.72,.72,.72)};
+    const head=new THREE.Mesh(headGeometries[activeCharacter],skin);styleGeometry(head,headGeometries.explorer,headGeometries.blocky);head.position.y=2.12;head.castShadow=true;model.add(head);
     const faceMat=new THREE.MeshStandardMaterial({color:0x1c1b1e, roughness:0.72, metalness:0.08});
     const faceDetails=new THREE.Group();head.add(faceDetails);
     const leftEye=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMat);leftEye.position.set(-.12,.06,-.38);faceDetails.add(leftEye);
     const rightEye=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMat);rightEye.position.set(.12,.06,-.38);faceDetails.add(rightEye);
     const nose=new THREE.Mesh(new THREE.ConeGeometry(.045,.16,12),faceMat);nose.rotation.x=-Math.PI/2;nose.position.set(0,-.02,-.43);faceDetails.add(nose);
-    const earGeo=new THREE.BoxGeometry(.12,.2,.12);for(const x of [-.39,.39]){const ear=new THREE.Mesh(earGeo,skin);ear.position.set(x,0,-.01);ear.visible=blocky;head.add(ear);}
-    const mouth=new THREE.Mesh(new THREE.BoxGeometry(.18,.04,.02),faceMat);mouth.position.set(0,-.18,-.32);faceDetails.add(mouth);
+    const earGeo=new THREE.BoxGeometry(.12,.2,.12);for(const x of [-.39,.39]){const ear=styleObject(new THREE.Mesh(earGeo,skin),"blocky");ear.position.set(x,0,-.01);ear.visible=blocky;head.add(ear);}
+    const mouth=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.18,.04,.02),faceMat),"explorer");mouth.position.set(0,-.18,-.32);faceDetails.add(mouth);
     nose.visible=true;mouth.visible=!blocky;
-    if(blocky){const smile=new THREE.Mesh(new THREE.TorusGeometry(.13,.018,6,16,Math.PI),faceMat);smile.rotation.z=Math.PI;smile.position.set(0,-.1,-.405);faceDetails.add(smile);}
-    const hair=new THREE.Mesh(blocky?new THREE.BoxGeometry(.76,.25,.76):new THREE.SphereGeometry(.39,8,5,0,Math.PI*2,0,Math.PI*.48),hairMat);hair.position.y=blocky?2.56:2.23;model.add(hair);
-    const limb=(x:number,y:number,material:THREE.Material,length:number,radius:number)=>{const pivot=new THREE.Group();pivot.position.set(x,y,0);if(blocky){const upper=new THREE.Mesh(new THREE.BoxGeometry(radius*2.35,length*.52,radius*2.35),material),lower=new THREE.Mesh(new THREE.BoxGeometry(radius*2.35,length*.48,radius*2.35),skin);upper.position.y=-length*.26;lower.position.y=-length*.76;upper.castShadow=lower.castShadow=true;pivot.add(upper,lower);}else{const mesh=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius*.9,length,7),material);mesh.position.y=-length/2;mesh.castShadow=true;pivot.add(mesh);}model.add(pivot);return pivot;};
+    const smile=styleObject(new THREE.Mesh(new THREE.TorusGeometry(.13,.018,6,16,Math.PI),faceMat),"blocky");smile.rotation.z=Math.PI;smile.position.set(0,-.1,-.405);faceDetails.add(smile);smile.visible=blocky;
+    const hairGeometries={explorer:new THREE.SphereGeometry(.39,8,5,0,Math.PI*2,0,Math.PI*.48),blocky:new THREE.BoxGeometry(.76,.25,.76)};
+    const hair=new THREE.Mesh(hairGeometries[activeCharacter],hairMat);styleGeometry(hair,hairGeometries.explorer,hairGeometries.blocky);hair.position.y=blocky?2.56:2.23;model.add(hair);
+    const limb=(x:number,y:number,material:THREE.Material,length:number,radius:number)=>{const pivot=new THREE.Group();pivot.position.set(x,y,0);const explorerParts=styleObject(new THREE.Group(),"explorer"),blockyParts=styleObject(new THREE.Group(),"blocky"),cylinder=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius*.9,length,7),material);cylinder.position.y=-length/2;cylinder.castShadow=true;explorerParts.add(cylinder);const upper=new THREE.Mesh(new THREE.BoxGeometry(radius*2.35,length*.52,radius*2.35),material),lower=new THREE.Mesh(new THREE.BoxGeometry(radius*2.35,length*.48,radius*2.35),skin);upper.position.y=-length*.26;lower.position.y=-length*.76;upper.castShadow=lower.castShadow=true;blockyParts.add(upper,lower);explorerParts.visible=!blocky;blockyParts.visible=blocky;pivot.add(explorerParts,blockyParts);model.add(pivot);return pivot;};
     const leftArm=limb(-.56,1.58,shirt,.72,.13),rightArm=limb(.56,1.58,shirt,.72,.13);
-    for(const x of [-.5,.5]){const shoulder=new THREE.Mesh(blocky?new THREE.BoxGeometry(.28,.28,.48):new THREE.SphereGeometry(.2,8,6),shirt);shoulder.position.set(x,1.58,0);shoulder.scale.set(1.05,.82,1);shoulder.castShadow=true;model.add(shoulder);}
-    bodyShape.current={player:model,body,leftArm,rightArm};
-    const width=.78+look.build*.5,height=.82+look.height*.38,arms=.82+look.muscle*.55;model.scale.set(width,height,width);body.scale.set(1+look.muscle*.18,1,1+look.muscle*.18);leftArm.scale.set(arms,1,arms);rightArm.scale.set(arms,1,arms);leftArm.position.x=-(.48+look.build*.11+look.muscle*.07);rightArm.position.x=-leftArm.position.x;
-    const collar=new THREE.Mesh(new THREE.TorusGeometry(.2,.055,6,12),shirt);collar.rotation.x=Math.PI/2;collar.position.y=1.86;model.add(collar);
-    const leftHand=new THREE.Mesh(blocky?new THREE.BoxGeometry(.24,.24,.24):new THREE.SphereGeometry(.14,7,6),skin);leftHand.position.y=-.75;leftArm.add(leftHand);
-    const rightHand=leftHand.clone();rightArm.add(rightHand);
+    for(const x of [-.5,.5]){const shoulderGeometries={explorer:new THREE.SphereGeometry(.2,8,6),blocky:new THREE.BoxGeometry(.28,.28,.48)},shoulder=new THREE.Mesh(shoulderGeometries[activeCharacter],shirt);styleGeometry(shoulder,shoulderGeometries.explorer,shoulderGeometries.blocky);shoulder.position.set(x,1.58,0);shoulder.scale.set(1.05,.82,1);shoulder.castShadow=true;model.add(shoulder);}
+    const collar=styleObject(new THREE.Mesh(new THREE.TorusGeometry(.2,.055,6,12),shirt),"explorer");collar.rotation.x=Math.PI/2;collar.position.y=1.86;collar.visible=!blocky;model.add(collar);
+    const handGeometries={explorer:new THREE.SphereGeometry(.14,7,6),blocky:new THREE.BoxGeometry(.24,.24,.24)};
+    const leftHand=new THREE.Mesh(handGeometries[activeCharacter],skin);styleGeometry(leftHand,handGeometries.explorer,handGeometries.blocky);leftHand.position.y=-.75;leftArm.add(leftHand);
+    const rightHand=new THREE.Mesh(handGeometries[activeCharacter],skin);styleGeometry(rightHand,handGeometries.explorer,handGeometries.blocky);rightHand.position.y=-.75;rightArm.add(rightHand);
     const leftLeg=limb(-.23,.82,pants,.83,.17),rightLeg=limb(.23,.82,pants,.83,.17);
-    const sole=mat(0x101b20),leftBoot=new THREE.Mesh(blocky?new THREE.BoxGeometry(.34,.22,.58):new THREE.CapsuleGeometry(.16,.24,3,6),boot);leftBoot.rotation.x=blocky?0:Math.PI/2;leftBoot.position.set(0,-.84,-.16);leftBoot.scale.set(1,1,1.12);leftBoot.castShadow=true;leftLeg.add(leftBoot);
+    const sole=mat(0x101b20),bootGeometries={explorer:new THREE.CapsuleGeometry(.16,.24,3,6),blocky:new THREE.BoxGeometry(.34,.22,.58)},leftBoot=new THREE.Mesh(bootGeometries[activeCharacter],boot);styleGeometry(leftBoot,bootGeometries.explorer,bootGeometries.blocky);leftBoot.rotation.x=blocky?0:Math.PI/2;leftBoot.position.set(0,-.84,-.16);leftBoot.scale.set(1,1,1.12);leftBoot.castShadow=true;leftLeg.add(leftBoot);
     const leftSole=new THREE.Mesh(new THREE.BoxGeometry(.3,.1,.5,2,1,2),sole);leftSole.position.set(0,-.98,-.16);leftSole.castShadow=true;leftLeg.add(leftSole);
-    const rightBoot=leftBoot.clone(),rightSole=leftSole.clone();rightLeg.add(rightBoot,rightSole);
+    const rightBoot=new THREE.Mesh(bootGeometries[activeCharacter],boot);styleGeometry(rightBoot,bootGeometries.explorer,bootGeometries.blocky);rightBoot.rotation.x=leftBoot.rotation.x;rightBoot.position.copy(leftBoot.position);rightBoot.scale.copy(leftBoot.scale);rightBoot.castShadow=true;const rightSole=leftSole.clone();rightLeg.add(rightBoot,rightSole);
+    const setCharacter=(character:CharacterStyle)=>{if(activeCharacter===character)return;model.traverse(object=>{const style=object.userData.characterStyle;if(style==="explorer"||style==="blocky")object.visible=style===character;});styleUpdates.forEach(update=>update(character));hair.position.y=character==="blocky"?2.56:2.23;leftBoot.rotation.x=rightBoot.rotation.x=character==="blocky"?0:Math.PI/2;activeCharacter=character;};
+    bodyShape.current={player:model,body,leftArm,rightArm,setCharacter};
+    const width=.78+look.build*.5,height=.82+look.height*.38,arms=.82+look.muscle*.55;model.scale.set(width,height,width);body.scale.set(1+look.muscle*.18,1,1+look.muscle*.18);leftArm.scale.set(arms,1,arms);rightArm.scale.set(arms,1,arms);leftArm.position.x=-(.48+look.build*.11+look.muscle*.07);rightArm.position.x=-leftArm.position.x;
 
     for (let i = 0; i < 28; i++) {
       const a = i < 5 ? (i / 5 * Math.PI * 2) : rand(i + 1810) * Math.PI * 2;
@@ -517,7 +544,7 @@ export default function IslandGame() {
       const x = Math.cos(a) * r, z = (i < 5 ? 90 : 0) + Math.sin(a) * r, radius = .28 + rand(i + 1860) * .16;
       const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(radius, 0), rockMaterial);
       mesh.position.set(x, surfaceHeight(x, z) + radius * .78, z); mesh.rotation.set(rand(i) * 3, rand(i + 2) * 4, rand(i + 5) * 2); mesh.castShadow = !lowPower; mesh.receiveShadow = !lowPower; scene.add(mesh);
-      throwableRocks.push({ id: rockCount + i, mesh, velocity: null, held: false, radius, baseScale: new THREE.Vector3(1, 1, 1), restPosition: mesh.position.clone(), instanceIndex: null, collider: null });
+      throwableRocks.push({ id: rockCount + i, mesh, velocity: null, held: false, hitDragon: false, radius, baseScale: new THREE.Vector3(1, 1, 1), restPosition: mesh.position.clone(), instanceIndex: null, collider: null });
     }
     const activateRock = (rock: ThrowableRock) => {
       if (!rock.mesh) {
@@ -532,19 +559,494 @@ export default function IslandGame() {
     const ebody=new THREE.Mesh(new THREE.CapsuleGeometry(.55,1.4,4,7),mat(0x17272d,0.7,0x06171d));ebody.position.y=1.2;enemy.add(ebody);
     for(const x of [-.2,.2]){const eye=new THREE.Mesh(new THREE.SphereGeometry(.07,6,6),mat(0xff533d,1,0xff2200));eye.position.set(x,1.65,-.5);enemy.add(eye);}
     const enemyLight=new THREE.PointLight(0xff1f13,0,6);enemyLight.position.y=1.5;enemy.add(enemyLight);
-    type Zombie={root:THREE.Group;leftArm:THREE.Group;rightArm:THREE.Group;leftLeg:THREE.Group;rightLeg:THREE.Group;floor:number;phase:number;stunnedUntil:number;lastHit:number};const zombies:Zombie[]=[];for(let i=0;i<23;i++){const root=new THREE.Group(),bodyZ=new THREE.Mesh(new THREE.CapsuleGeometry(.38,.58,3,6),mat(i%3===0?0x596f3d:0x4b5d43));bodyZ.position.y=1.2;bodyZ.rotation.x=-.12;root.add(bodyZ);const tornShirt=new THREE.Mesh(new THREE.BoxGeometry(.5,.32,.08),mat(0x242d2b));tornShirt.position.set(0,1.3,-.37);tornShirt.rotation.z=.12;root.add(tornShirt);const headZ=new THREE.Mesh(new THREE.IcosahedronGeometry(.34,0),mat(0x78905a));headZ.position.y=2.05;headZ.rotation.x=-.08;root.add(headZ);const faceZ=new THREE.Mesh(new THREE.BoxGeometry(.5,.28,.045),mat(0x34453a));faceZ.position.set(0,2.05,-.325);root.add(faceZ);const jaw=new THREE.Mesh(new THREE.BoxGeometry(.28,.12,.22),mat(0x53644d));jaw.position.set(0,1.86,-.3);root.add(jaw);for(const ex of [-.12,.12]){const eyeZ=new THREE.Mesh(new THREE.SphereGeometry(.06,8,6),mat(0xff4c2f,1,0xff2200));eyeZ.position.set(ex,2.08,-.36);root.add(eyeZ);}const armZ=(x:number)=>{const p=new THREE.Group(),m=new THREE.Mesh(new THREE.CylinderGeometry(.09,.1,.78,6),mat(0x718451));m.position.y=-.36;p.add(m);const hand=new THREE.Mesh(new THREE.SphereGeometry(.13,6,5),mat(0x718451));hand.position.y=-.77;p.add(hand);p.position.set(x,1.58,0);root.add(p);return p;},legZ=(x:number)=>{const p=new THREE.Group(),m=new THREE.Mesh(new THREE.CylinderGeometry(.14,.16,1.02,6),mat(0x273b39));p.position.set(x,.76,0);m.position.y=-.51;p.add(m);const boot=new THREE.Mesh(new THREE.BoxGeometry(.28,.16,.48),mat(0x11191b));boot.position.set(0,-1.03,-.08);p.add(boot);root.add(p);return p;},leftArmZ=armZ(-.48),rightArmZ=armZ(.48),leftLegZ=legZ(-.2),rightLegZ=legZ(.2),floor=i<14?0:1+(i-14)%3;if(floor>0){root.position.set(DUNGEON_X-25+rand(i)*50,DUNGEON_LEVELS[floor-1],DUNGEON_Z-22+rand(i+7)*44);}else{const second=i>=8,cx=second?SECOND_X:0,a=rand(i+4100)*6.28,r=second?55+rand(i)*45:75+rand(i)*115;root.position.set(cx+Math.cos(a)*r,0,Math.sin(a)*r);}root.visible=false;scene.add(root);zombies.push({root,leftArm:leftArmZ,rightArm:rightArmZ,leftLeg:leftLegZ,rightLeg:rightLegZ,floor,phase:rand(i)*6.28,stunnedUntil:0,lastHit:0});}
+    type ZombieSize="normal"|"big"|"fat"|"small";
+    type Zombie={root:THREE.Group;leftArm:THREE.Group;rightArm:THREE.Group;leftLeg:THREE.Group;rightLeg:THREE.Group;floor:number;phase:number;stunnedUntil:number;lastHit:number;size:ZombieSize;health:number;maxHealth:number;dead:boolean};
+    const zombies:Zombie[]=[];
+    const surfaceZombieCount=38;
+    for(let i=0;i<surfaceZombieCount+9;i++){
+      const surface=i<surfaceZombieCount;
+      const size:ZombieSize=surface
+        ? i%9===0?"big":i%9===1||i%9===2?"fat":i%9===3||i%9===4?"small":"normal"
+        : i>=surfaceZombieCount+6?"big":"normal";
+      const root=new THREE.Group();
+      const bodyZ=new THREE.Mesh(new THREE.CapsuleGeometry(.38,.58,3,6),mat(i%3===0?0x596f3d:0x4b5d43));
+      bodyZ.position.y=1.2;bodyZ.rotation.x=-.12;root.add(bodyZ);
+      const tornShirt=new THREE.Mesh(new THREE.BoxGeometry(.5,.32,.08),mat(0x242d2b));
+      tornShirt.position.set(0,1.3,-.37);tornShirt.rotation.z=.12;root.add(tornShirt);
+      const headZ=new THREE.Mesh(new THREE.IcosahedronGeometry(.34,0),mat(0x78905a));
+      headZ.position.y=2.05;headZ.rotation.x=-.08;root.add(headZ);
+      const faceZ=new THREE.Mesh(new THREE.BoxGeometry(.5,.28,.045),mat(0x34453a));
+      faceZ.position.set(0,2.05,-.325);root.add(faceZ);
+      const jaw=new THREE.Mesh(new THREE.BoxGeometry(.28,.12,.22),mat(0x53644d));
+      jaw.position.set(0,1.86,-.3);root.add(jaw);
+      for(const ex of [-.12,.12]){
+        const eyeZ=new THREE.Mesh(new THREE.SphereGeometry(.06,8,6),mat(0xff4c2f,1,0xff2200));
+        eyeZ.position.set(ex,2.08,-.36);root.add(eyeZ);
+      }
+      const armZ=(x:number)=>{
+        const p=new THREE.Group(),m=new THREE.Mesh(new THREE.CylinderGeometry(.09,.1,.78,6),mat(0x718451));
+        m.position.y=-.36;p.add(m);
+        const hand=new THREE.Mesh(new THREE.SphereGeometry(.13,6,5),mat(0x718451));
+        hand.position.y=-.77;p.add(hand);p.position.set(x,1.58,0);root.add(p);return p;
+      };
+      const legZ=(x:number)=>{
+        const p=new THREE.Group(),m=new THREE.Mesh(new THREE.CylinderGeometry(.14,.16,1.02,6),mat(0x273b39));
+        p.position.set(x,.76,0);m.position.y=-.51;p.add(m);
+        const boot=new THREE.Mesh(new THREE.BoxGeometry(.28,.16,.48),mat(0x11191b));
+        boot.position.set(0,-1.03,-.08);p.add(boot);root.add(p);return p;
+      };
+      const leftArmZ=armZ(-.48),rightArmZ=armZ(.48),leftLegZ=legZ(-.2),rightLegZ=legZ(.2);
+      const floor=surface?0:1+(i-surfaceZombieCount)%3;
+      if(!surface){
+        root.position.set(DUNGEON_X-25+rand(i)*50,DUNGEON_LEVELS[floor-1],DUNGEON_Z-22+rand(i+7)*44);
+      }else{
+        const surfaceIndex=i;
+        const second=surfaceIndex>=surfaceZombieCount/2,cx=second?SECOND_X:0;
+        const a=rand(i+4100)*6.28,r=second?55+rand(i)*45:75+rand(i)*115;
+        const x=cx+Math.cos(a)*r,z=Math.sin(a)*r;
+        root.position.set(x,second?secondSurfaceHeight(x,z):surfaceHeight(x,z),z);
+      }
+      const sizeScale=size==="big"?1.65:size==="fat"?1.38:size==="small"?.62:1;
+      if(size==="fat")root.scale.set(sizeScale*1.22,sizeScale*.9,sizeScale*1.12);
+      else root.scale.setScalar(sizeScale);
+      root.visible=false;scene.add(root);
+      const maxHealth=floor>0&&i>=surfaceZombieCount+6?14:size==="big"?6:size==="fat"?5:size==="small"?2:3;
+      zombies.push({root,leftArm:leftArmZ,rightArm:rightArmZ,leftLeg:leftLegZ,rightLeg:rightLegZ,floor,phase:rand(i)*6.28,stunnedUntil:0,lastHit:0,size,health:maxHealth,maxHealth,dead:false});
+    }
     zombies.slice(-3).forEach((boss,i)=>{boss.root.scale.setScalar(1.75+i*.12);const aura=new THREE.PointLight(0xff3c25,2.2,9);aura.position.y=2;boss.root.add(aura);});
     const dragon=new THREE.Group(),dragonMat=mat(0x8f1722),dragonScale=mat(0xd13a35),dragonWing=mat(0x5b101b),dragonDark=mat(0x351015);if(dragonWing instanceof THREE.MeshStandardMaterial)dragonWing.side=THREE.DoubleSide;scene.add(dragon);const dragonPart=(geo:THREE.BufferGeometry,material:THREE.Material,x:number,y:number,z:number)=>{const mesh=new THREE.Mesh(geo,material);mesh.position.set(x,y,z);mesh.castShadow=!lowPower;dragon.add(mesh);return mesh;};dragonPart(new THREE.BoxGeometry(4.2,3.2,7),dragonMat,0,0,0);dragonPart(new THREE.BoxGeometry(2.8,2.4,4),dragonScale,0,-.05,5.1);dragonPart(new THREE.BoxGeometry(2.35,1.45,2.8),dragonDark,0,-.35,8);dragonPart(new THREE.BoxGeometry(2.4,1.25,5),dragonMat,0,.1,-5.8);dragonPart(new THREE.BoxGeometry(1.5,.9,5.5),dragonScale,0,.1,-10.8);const wing=(side:number)=>{const pivot=new THREE.Group();pivot.position.set(side*2,1,0);const frame=new THREE.Mesh(new THREE.BoxGeometry(8,.18,.22),dragonScale);frame.position.x=side*4;const wingGeo=new THREE.BufferGeometry();wingGeo.setAttribute("position",new THREE.Float32BufferAttribute([0,0,2,side*8,0,-3,side*7,0,4],3));wingGeo.computeVertexNormals();const sail=new THREE.Mesh(wingGeo,dragonWing);pivot.add(frame,sail);dragon.add(pivot);return pivot;},dragonLeftWing=wing(-1),dragonRightWing=wing(1);for(const x of [-1.35,1.35]){dragonPart(new THREE.BoxGeometry(.65,2.2,.7),dragonScale,x,-2.3,1);dragonPart(new THREE.BoxGeometry(.55,.7,2.2),dragonDark,x,-3.15,1.7);const eye=dragonPart(new THREE.BoxGeometry(.35,.35,.12),mat(0xffd447,1,0xff5a00),x*.72,.35,9.42);eye.rotation.y=0;}for(let i=0;i<6;i++){const spine=dragonPart(new THREE.ConeGeometry(.3,1.15,4),dragonScale,0,2,-3.5+i*1.45);spine.rotation.z=Math.PI;}dragon.position.set(-115,24,-135);
     const dragonTailParts=dragon.children.filter(child=>child instanceof THREE.Mesh).slice(3,5);dragonTailParts.forEach((part,index)=>{part.name=`dragon-tail-${index}`;});const dragonJaw=dragonPart(new THREE.BoxGeometry(1.7,.34,1.7),dragonDark,0,-1.02,8.25);dragonJaw.name="dragon-jaw";
     const animateDragon=(root:THREE.Group,time:number,phase:number,speed:number)=>{const jaw=root.getObjectByName("dragon-jaw");if(jaw)jaw.rotation.x=.08+Math.max(0,Math.sin(time*.006*speed+phase))*.2;root.children.filter(child=>child.name.startsWith("dragon-tail-")).forEach((part,index)=>{part.rotation.y=Math.sin(time*.0035*speed+phase+index*.7)*(.08+index*.06);});};
     const cloneDragon=(color:number)=>{const copy=dragon.clone(true);copy.traverse(object=>{if(!(object as THREE.Mesh).isMesh)return;const mesh=object as THREE.Mesh,material=(mesh.material as THREE.MeshStandardMaterial).clone();if(material.emissiveIntensity===0)material.color.setHex(color);mesh.material=material;});scene.add(copy);return copy;};
     const grayDragon=cloneDragon(0x78828a),greenDragon=cloneDragon(0x3c8c58);grayDragon.scale.setScalar(.9);greenDragon.scale.setScalar(1.08);
+    dragon.userData.health=12;dragon.userData.dead=false;
+    for(const flyingDragon of [grayDragon,greenDragon]){flyingDragon.userData.health=12;flyingDragon.userData.dead=false;}
     const dragonVariants=[{root:grayDragon,phase:2.2,speed:.72,scale:.9},{root:greenDragon,phase:4.4,speed:.9,scale:1.08}];
     const secretNodes=[[-188,132],[190,-174],[SECOND_X-86,70],[SECOND_X+78,-64]].map(([x,z],i)=>{const mesh=addMesh(new THREE.OctahedronGeometry(.72),mat(0x7bfff0,.25,0x27d7c4),x,surfaceHeight(x,z)+1.1,z);const light=new THREE.PointLight(0x55ffe0,1.4,7);mesh.add(light);return {mesh,taken:false,id:i};});
     const coopPads=[[SECOND_X-12,18],[SECOND_X+12,18]].map(([x,z],i)=>{const mesh=addMesh(new THREE.CylinderGeometry(2.2,2.5,.35,16),mat(i?0xffb13b:0x4ee9d0,.3,i?0xa95c08:0x168d83),x,secondSurfaceHeight(x,z)+.15,z);return mesh;});let coopRewarded=false;
+    const walkingDragon = new THREE.Group();
+    walkingDragon.name = "walking-dragon-green";
+    const walkingDragonMats = {
+      scale: mat(0x2d7a3a),
+      darkScale: mat(0x1e5428),
+      belly: mat(0xd4a820),
+      horn: mat(0xf0e0b0),
+      eye: mat(0xffcc00, 0.4, 0xff8800),
+      pupil: mat(0x000000),
+      wing: mat(0x8a3acd),
+      claw: mat(0x2a2a2a),
+    };
+    Object.entries(walkingDragonMats).forEach(([name, material]) => { material.name = `walking-dragon-${name}`; });
+    walkingDragonMats.wing.side = THREE.DoubleSide;
+    const addWalkingDragonBox = (
+      width: number,
+      height: number,
+      depth: number,
+      material: THREE.Material,
+      x: number,
+      y: number,
+      z: number,
+      parent: THREE.Object3D = walkingDragon,
+    ) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = mesh.receiveShadow = !lowPower;
+      parent.add(mesh);
+      return mesh;
+    };
+    const addWalkingDragonPart = (
+      geometry: THREE.BufferGeometry,
+      material: THREE.Material,
+      x: number,
+      y: number,
+      z: number,
+      parent: THREE.Object3D = walkingDragon,
+    ) => {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = mesh.receiveShadow = !lowPower;
+      parent.add(mesh);
+      return mesh;
+    };
+
+    addWalkingDragonBox(3, 2.6, 2.2, walkingDragonMats.scale, 0, 3.2, 0);
+    addWalkingDragonBox(2.6, 1.6, 0.15, walkingDragonMats.belly, 0, 3, 1.18);
+    for (let i = 0; i < 3; i++) {
+      addWalkingDragonBox(2.4, 0.4, 0.1, walkingDragonMats.belly, 0, 2.8 + i * 0.4, 1.15);
+    }
+    for (let i = 0; i < 5; i++) {
+      const spike = addWalkingDragonPart(
+        new THREE.ConeGeometry(0.28, 0.8, 4), walkingDragonMats.horn, 0, 4.55, -1.05 + i * 0.5,
+      );
+      spike.rotation.x = -0.2;
+    }
+    const scaleStudGeometry = new THREE.CylinderGeometry(0.15, 0.15, 0.12, 10);
+    for (let x = -1; x <= 1; x++) {
+      for (let z = -0.7; z <= 0.7; z += 0.7) {
+        addWalkingDragonPart(scaleStudGeometry, walkingDragonMats.darkScale, x, 4.55, z);
+      }
+    }
+    addWalkingDragonBox(1.8, 1, 1.6, walkingDragonMats.scale, 0, 4.6, 1);
+    addWalkingDragonBox(2, 1.6, 1.8, walkingDragonMats.scale, 0, 5.6, 1.2);
+    addWalkingDragonBox(1.4, 0.9, 1.2, walkingDragonMats.scale, 0, 5.35, 2.4);
+    addWalkingDragonBox(1.2, 0.7, 0.3, walkingDragonMats.darkScale, 0, 5.35, 3.05);
+    for (const x of [-0.3, 0.3]) {
+      addWalkingDragonBox(0.2, 0.2, 0.15, walkingDragonMats.darkScale, x, 5.6, 3.1);
+    }
+    for (let i = 0; i < 4; i++) {
+      const tooth = addWalkingDragonPart(
+        new THREE.ConeGeometry(0.08, 0.25, 4), walkingDragonMats.horn, -0.6 + i * 0.4, 5.05, 2.9,
+      );
+      tooth.rotation.x = Math.PI;
+    }
+    for (const x of [-0.55, 0.55]) {
+      addWalkingDragonBox(0.55, 0.55, 0.15, walkingDragonMats.darkScale, x, 5.85, 2.1);
+      addWalkingDragonPart(new THREE.SphereGeometry(0.22, 12, 10), walkingDragonMats.eye, x, 5.85, 2.18);
+      addWalkingDragonBox(0.08, 0.22, 0.08, walkingDragonMats.pupil, x, 5.85, 2.32);
+      const brow = addWalkingDragonBox(0.7, 0.15, 0.2, walkingDragonMats.darkScale, x, 6.1, 2.15);
+      brow.rotation.z = x < 0 ? 0.35 : -0.35;
+    }
+    for (const [x, direction] of [[-0.7, -1], [0.7, 1]] as const) {
+      let hornY = 6.4;
+      let hornZ = 1;
+      let curve = 0;
+      for (let i = 0; i < 4; i++) {
+        const segmentLength = 0.4;
+        const radius = 0.18 - i * 0.03;
+        const segment = addWalkingDragonPart(
+          new THREE.CylinderGeometry(radius * 0.9, radius, segmentLength, 6),
+          walkingDragonMats.horn,
+          x,
+          hornY,
+          hornZ,
+        );
+        segment.rotation.x = curve + direction * 0.3;
+        segment.rotation.z = -direction * 0.15;
+        hornY += Math.cos(curve + direction * 0.3) * segmentLength;
+        hornZ -= Math.sin(curve + direction * 0.3) * segmentLength;
+        curve += direction * 0.35;
+      }
+    }
+
+    const walkingDragonJaw = new THREE.Group();
+    walkingDragonJaw.name = "walking-dragon-jaw";
+    walkingDragonJaw.position.set(0, 4.85, 1.5);
+    walkingDragon.add(walkingDragonJaw);
+    addWalkingDragonBox(1.5, 0.5, 1.4, walkingDragonMats.belly, 0, -0.25, 0.85, walkingDragonJaw);
+    addWalkingDragonBox(1.3, 0.05, 1.2, mat(0x8a1010), 0, -0.01, 0.85, walkingDragonJaw);
+    for (let i = 0; i < 4; i++) {
+      addWalkingDragonPart(
+        new THREE.ConeGeometry(0.07, 0.22, 4),
+        walkingDragonMats.horn,
+        -0.55 + i * 0.37,
+        -0.03,
+        1.2,
+        walkingDragonJaw,
+      );
+    }
+
+    const makeWalkingDragonLimb = (x: number, y: number, z: number, front: boolean, name: string) => {
+      const pivot = new THREE.Group();
+      pivot.name = name;
+      pivot.position.set(x, y, z);
+      walkingDragon.add(pivot);
+      if (front) {
+        addWalkingDragonBox(0.7, 1.4, 0.7, walkingDragonMats.scale, 0, -0.7, 0, pivot);
+        const paw = new THREE.Group();
+        paw.position.y = -1.4;
+        pivot.add(paw);
+        addWalkingDragonBox(0.75, 0.3, 0.75, walkingDragonMats.darkScale, 0, -0.15, 0, paw);
+        for (let i = -1; i <= 1; i++) {
+          const claw = addWalkingDragonPart(
+            new THREE.ConeGeometry(0.12, 0.35, 4), walkingDragonMats.claw, i * 0.22, -0.35, 0.25, paw,
+          );
+          claw.rotation.x = 2.2;
+        }
+      } else {
+        addWalkingDragonBox(1, 1.8, 1, walkingDragonMats.scale, 0, -0.9, 0, pivot);
+        addWalkingDragonBox(1.2, 0.4, 1.4, walkingDragonMats.darkScale, 0, -1.9, 0.15, pivot);
+        for (let i = -1; i <= 1; i++) {
+          const claw = addWalkingDragonPart(
+            new THREE.ConeGeometry(0.12, 0.35, 4), walkingDragonMats.claw, i * 0.35, -1.95, 0.9, pivot,
+          );
+          claw.rotation.x = 2.2;
+        }
+      }
+      return pivot;
+    };
+    makeWalkingDragonLimb(-1.6, 3.8, 0.6, true, "walking-dragon-front-left");
+    makeWalkingDragonLimb(1.6, 3.8, 0.6, true, "walking-dragon-front-right");
+    makeWalkingDragonLimb(-1, 2.2, -0.5, false, "walking-dragon-hind-left");
+    makeWalkingDragonLimb(1, 2.2, -0.5, false, "walking-dragon-hind-right");
+
+    const walkingDragonTail: THREE.Group[] = [];
+    let tailParent: THREE.Object3D = walkingDragon;
+    const tailOffset = new THREE.Vector3(0, 3.3, -1.2);
+    for (let i = 0; i < 6; i++) {
+      const segment = new THREE.Group();
+      segment.name = `walking-dragon-tail-${i}`;
+      const size = 1.3 - i * 0.16;
+      segment.position.copy(tailOffset);
+      addWalkingDragonBox(
+        size,
+        size,
+        0.9,
+        i % 2 === 0 ? walkingDragonMats.scale : walkingDragonMats.darkScale,
+        0,
+        0,
+        -0.45,
+        segment,
+      );
+      if (i < 5) {
+        const spike = addWalkingDragonPart(
+          new THREE.ConeGeometry(0.12 - i * 0.015, 0.3 - i * 0.03, 4),
+          walkingDragonMats.horn,
+          0,
+          size / 2 + 0.1,
+          -0.45,
+          segment,
+        );
+        spike.rotation.x = -0.3;
+      }
+      tailParent.add(segment);
+      walkingDragonTail.push(segment);
+      tailParent = segment;
+      tailOffset.set(0, 0, -0.9);
+    }
+    const tailTip = addWalkingDragonPart(
+      new THREE.ConeGeometry(0.5, 1, 4), walkingDragonMats.horn, 0, 0, -1,
+      walkingDragonTail[walkingDragonTail.length - 1],
+    );
+    tailTip.rotation.x = Math.PI / 2;
+
+    const makeWalkingDragonWing = (side: number) => {
+      const root = new THREE.Group();
+      root.name = side < 0 ? "walking-dragon-wing-left" : "walking-dragon-wing-right";
+      root.position.set(side * 0.9, 4.2, -0.4);
+      walkingDragon.add(root);
+      const points = [
+        [-0.8, 0.6], [0.2, 0.9], [1.2, 1.1], [2.2, 0.9], [3, 0.4],
+        [2.6, -0.2], [2, 0.1], [1.5, -0.5], [1, -0.1], [0.4, -0.7], [-0.2, -0.3], [-0.6, -0.5],
+      ].map(([x, z]) => [x * side, z] as const);
+      const vertices: number[] = [];
+      for (let i = 1; i < points.length - 1; i++) {
+        const [ax, az] = points[0];
+        const [bx, bz] = points[i];
+        const [cx, cz] = points[i + 1];
+        vertices.push(ax, 0, az, bx, 0, bz, cx, 0, cz);
+      }
+      const membraneGeometry = new THREE.BufferGeometry();
+      membraneGeometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+      membraneGeometry.computeVertexNormals();
+      addWalkingDragonPart(membraneGeometry, walkingDragonMats.wing, 0, 0, 0, root);
+      const leadingEdge = [[0.2, 0.9], [1.2, 1.1], [2.2, 0.9], [3, 0.4]]
+        .map(([x, z]) => [x * side, z] as const);
+      for (let i = 0; i < leadingEdge.length - 1; i++) {
+        const [x1, z1] = leadingEdge[i];
+        const [x2, z2] = leadingEdge[i + 1];
+        const bone = addWalkingDragonPart(
+          new THREE.BoxGeometry(Math.hypot(x2 - x1, z2 - z1), 0.22, 0.22),
+          walkingDragonMats.darkScale,
+          (x1 + x2) / 2,
+          0,
+          (z1 + z2) / 2,
+          root,
+        );
+        bone.rotation.y = -Math.atan2(z2 - z1, x2 - x1);
+      }
+      return root;
+    };
+    makeWalkingDragonWing(-1);
+    makeWalkingDragonWing(1);
+    const walkingDragonRadius = 4.5;
+    type WalkingDragonController = {
+      root: THREE.Group;
+      frontLegs: THREE.Group[];
+      hindLegs: THREE.Group[];
+      tail: THREE.Group[];
+      wings: THREE.Group[];
+      jaw: THREE.Group;
+      route: { x: number; z: number }[];
+      waypointIndex: number;
+      gaitBlend: number;
+      gaitPhase: number;
+      flightOffset: number;
+      landingY: number | null;
+      speed: number;
+      aggro: boolean;
+      fireAt: number;
+      health: number;
+      maxHealth: number;
+      defeated: boolean;
+      ridden: boolean;
+    };
+    const walkingDragonControllers: WalkingDragonController[] = [];
+    const walkingDragonRouteRadius = 12;
+    const walkingDragonRoutePoints = 32;
+    const findWalkingDragonRoute = (startAngle: number) => {
+      const islands = [
+        { x: 0, z: 0, maxRadius: ISLAND_RADIUS - walkingDragonRadius - walkingDragonRouteRadius - 12 },
+        { x: SECOND_X, z: SECOND_Z, maxRadius: SECOND_RADIUS - walkingDragonRadius - walkingDragonRouteRadius - 12 },
+      ];
+      for (const island of islands) {
+        const rings = Math.floor(island.maxRadius / 16);
+        for (let ring = 0; ring <= rings; ring++) {
+          const centerRadius = ring * 16;
+          const candidates = ring === 0 ? 1 : Math.max(12, Math.ceil(Math.PI * 2 * centerRadius / 16));
+          for (let candidate = 0; candidate < candidates; candidate++) {
+            const centerAngle = startAngle + candidate / candidates * Math.PI * 2;
+            const centerX = island.x + Math.cos(centerAngle) * centerRadius;
+            const centerZ = island.z + Math.sin(centerAngle) * centerRadius;
+            const route = Array.from({ length: walkingDragonRoutePoints }, (_, point) => {
+              const angle = startAngle + point / walkingDragonRoutePoints * Math.PI * 2;
+              return {
+                x: centerX + Math.cos(angle) * walkingDragonRouteRadius,
+                z: centerZ + Math.sin(angle) * walkingDragonRouteRadius,
+              };
+            });
+            const nearbyObstacles = colliders.filter(obstacle =>
+              Math.hypot(centerX - obstacle.x, centerZ - obstacle.z)
+                < walkingDragonRouteRadius + obstacle.r + walkingDragonRadius + 1,
+            );
+            const clearOfObjects = route.every(point => nearbyObstacles.every(obstacle => {
+              const clearance = obstacle.r + walkingDragonRadius + 1;
+              return (point.x - obstacle.x) ** 2 + (point.z - obstacle.z) ** 2 >= clearance ** 2;
+            }));
+            if (!clearOfObjects) continue;
+            const clearOfRoutes = walkingDragonControllers.every(controller =>
+              route.every(point => controller.route.every(other =>
+                Math.hypot(point.x - other.x, point.z - other.z) >= walkingDragonRadius * 2 + 2,
+              )),
+            );
+            if (clearOfRoutes) return route;
+          }
+        }
+      }
+      throw new Error("Could not find a clear patrol route for the walking dragon");
+    };
+    const addWalkingDragonController = (root: THREE.Group, startAngle: number, speed: number) => {
+      const route = findWalkingDragonRoute(startAngle);
+      root.scale.setScalar(0.85);
+      root.position.set(route[0].x, surfaceHeight(route[0].x, route[0].z), route[0].z);
+      scene.add(root);
+      const namedGroups = (prefix: string) => {
+        const groups: THREE.Group[] = [];
+        root.traverse(object => {
+          if (object instanceof THREE.Group && object.name.startsWith(prefix)) groups.push(object);
+        });
+        return groups.sort((a, b) => a.name.localeCompare(b.name));
+      };
+      const jaw = root.getObjectByName("walking-dragon-jaw");
+      if (!(jaw instanceof THREE.Group)) throw new Error("Walking dragon jaw group is missing");
+      walkingDragonControllers.push({
+        root,
+        frontLegs: namedGroups("walking-dragon-front-"),
+        hindLegs: namedGroups("walking-dragon-hind-"),
+        tail: namedGroups("walking-dragon-tail-"),
+        wings: namedGroups("walking-dragon-wing-"),
+        jaw,
+        route,
+        waypointIndex: 1,
+        gaitBlend: 0,
+        gaitPhase: 0,
+        flightOffset: (startAngle / (Math.PI * 2)) * 60,
+        landingY: null,
+        speed,
+        aggro: false,
+        fireAt: 0,
+        health: 5,
+        maxHealth: 5,
+        defeated: false,
+        ridden: false,
+      });
+    };
+    addWalkingDragonController(walkingDragon, 0, 1);
+    const createWalkingDragonVariant = (
+      name: string,
+      startAngle: number,
+      speed: number,
+      palette: Record<string, number>,
+    ) => {
+      const root = walkingDragon.clone(true);
+      root.name = name;
+      const materialCopies = new Map<THREE.Material, THREE.Material>();
+      root.traverse(object => {
+        if (!(object instanceof THREE.Mesh)) return;
+        const cloneMaterial = (material: THREE.Material) => {
+          const cached = materialCopies.get(material);
+          if (cached) return cached;
+          const copy = material.clone();
+          if (copy instanceof THREE.MeshStandardMaterial) {
+            const color = palette[copy.name];
+            if (color !== undefined) copy.color.setHex(color);
+          }
+          materialCopies.set(material, copy);
+          return copy;
+        };
+        object.material = Array.isArray(object.material)
+          ? object.material.map(cloneMaterial)
+          : cloneMaterial(object.material);
+      });
+      addWalkingDragonController(root, startAngle, speed);
+    };
+    createWalkingDragonVariant("walking-dragon-red", Math.PI * 2 / 3, 0.88, {
+      "walking-dragon-scale": 0xb83b35,
+      "walking-dragon-darkScale": 0x70231f,
+      "walking-dragon-belly": 0xe7a34d,
+      "walking-dragon-horn": 0xf2d6a0,
+      "walking-dragon-wing": 0x762636,
+      "walking-dragon-claw": 0x321c1b,
+    });
+    createWalkingDragonVariant("walking-dragon-blue", Math.PI * 4 / 3, 0.78, {
+      "walking-dragon-scale": 0x3287c4,
+      "walking-dragon-darkScale": 0x1b4c7a,
+      "walking-dragon-belly": 0xd8cf78,
+      "walking-dragon-horn": 0xc3e6ee,
+      "walking-dragon-wing": 0x254f9c,
+      "walking-dragon-claw": 0x1c2637,
+    });
+    const walkingDragonMove = new THREE.Vector2();
+    const walkingDragonTestPosition = new THREE.Vector2();
+    const walkingDragonHitCenter = new THREE.Vector3();
+    const walkingDragonFireTarget = new THREE.Vector3();
+    const walkingDragonAimDirection = new THREE.Vector3();
+    const walkingDragonMuzzle = new THREE.Vector3();
+    const walkingDragonFireballPrevious = new THREE.Vector3();
+    const walkingDragonFireballs: { root: THREE.Group; velocity: THREE.Vector3; age: number; active: boolean; owner: "hostile" | "ridden" }[] = [];
+    let mountedDragon: WalkingDragonController | null = null;
+    let dragonHudVisibleUntil = 0;
+    const fireOuterMaterial = new THREE.MeshBasicMaterial({ color: 0xff3b08, transparent: true, opacity: 0.72 });
+    const fireCoreMaterial = new THREE.MeshBasicMaterial({ color: 0xffdf55 });
+    const fireSparkMaterial = new THREE.MeshBasicMaterial({ color: 0xffa51e });
+    const fireOuterGeometry = new THREE.SphereGeometry(0.72, 8, 6);
+    const fireCoreGeometry = new THREE.SphereGeometry(0.38, 8, 6);
+    const fireSparkGeometry = new THREE.ConeGeometry(0.22, 0.72, 5);
+    const createWalkingDragonFireball = () => {
+      const fireball = new THREE.Group();
+      const outerFlame = new THREE.Mesh(fireOuterGeometry, fireOuterMaterial);
+      outerFlame.scale.set(0.8, 0.8, 1.25);
+      const coreFlame = new THREE.Mesh(fireCoreGeometry, fireCoreMaterial);
+      coreFlame.position.z = 0.12;
+      fireball.add(outerFlame, coreFlame);
+      for (let spark = 0; spark < 3; spark++) {
+        const flame = new THREE.Mesh(fireSparkGeometry, fireSparkMaterial);
+        flame.position.set((spark - 1) * 0.34, 0, -0.58);
+        flame.rotation.x = -Math.PI / 2;
+        fireball.add(flame);
+      }
+      const fireLight = new THREE.PointLight(0xff5a12, 2.5, 8);
+      fireball.add(fireLight);
+      fireball.visible = false;
+      scene.add(fireball);
+      const projectile = { root: fireball, velocity: new THREE.Vector3(), age: 0, active: false, owner: "hostile" as "hostile" | "ridden" };
+      walkingDragonFireballs.push(projectile);
+      return projectile;
+    };
+    for (let i = 0; i < 3; i++) createWalkingDragonFireball();
+
     const builtWalls:THREE.Mesh[]=[];
 /*
-    const enemy = new THREE.Group(); scene.add(enemy); enemy.position.set(165, surfaceHeight(165, 145) + .2, 145);
+    const enemy=new THREE.Group();scene.add(enemy);enemy.position.set(165,surfaceHeight(165,145)+.2,145);enemy.userData.health=12;enemy.userData.dead=false;
     const ebody = new THREE.Mesh(new THREE.CapsuleGeometry(.55, 1.4, 4, 7), mat(0x17272d, 0.7, 0x06171d)); ebody.position.y = 1.2; enemy.add(ebody);
     for (const x of [-.2, .2]) { const eye = new THREE.Mesh(new THREE.SphereGeometry(.07, 6, 6), mat(0xff533d, 1, 0xff2200)); eye.position.set(x, 1.65, -.5); enemy.add(eye); }
     const enemyLight = new THREE.PointLight(0xff1f13, 0, 6); enemyLight.position.y = 1.5; enemy.add(enemyLight);
@@ -558,7 +1060,7 @@ export default function IslandGame() {
 
     type RemoteAvatar={root:THREE.Group;model:THREE.Group;leftArm:THREE.Group;rightArm:THREE.Group;leftLeg:THREE.Group;rightLeg:THREE.Group;target:THREE.Vector3;renderTarget:THREE.Vector3;velocity:THREE.Vector3;rotation:number;pose:string;anim:[number,number,number,number,number]|null;seen:number;sampleAt:number;serverUpdatedAt:number;rockMesh:THREE.Mesh|null;rockState:OnlineRock|null};
     const remotePlayers=new Map<string,RemoteAvatar>();
-    let localVoiceStream:MediaStream|null=null,processVoiceSignals=(signals:VoiceSignal[],players:OnlinePlayer[])=>{};const voicePeers=new Map<string,RTCPeerConnection>(),voiceAudios=new Map<string,HTMLAudioElement>(),seenSignals=new Set<number>(),pendingCandidates=new Map<string,RTCIceCandidateInit[]>();
+    let localVoiceStream:MediaStream|null=null,processVoiceSignals: (signals:VoiceSignal[],players:OnlinePlayer[])=>void=()=>{};const voicePeers=new Map<string,RTCPeerConnection>(),voiceAudios=new Map<string,HTMLAudioElement>(),seenSignals=new Set<number>(),pendingCandidates=new Map<string,RTCIceCandidateInit[]>();
     const makeRemote=(p:OnlinePlayer)=>{
       const root=new THREE.Group(),avatar=new THREE.Group(),look={...DEFAULT_LOOK,...p.appearance},blocky=look.character==="blocky";root.add(avatar);scene.add(root);
       const remoteMat=(color:number)=>new THREE.MeshStandardMaterial({color,roughness:.82,flatShading:true});
@@ -588,7 +1090,7 @@ export default function IslandGame() {
     };
 
     let yaw=0, pitch=.32, last=performance.now(), lastHud=0, lastSync=0,lastNpcSync=0,lastFullSync=0,lastBoundaryNotice=0, gameTime=.08,lastRoomServerNow=0, health=100, oxygen=100, scrap=0, cells=0, wood=0,stone=0,treasure=0,discoveries=0,craftedRaft=false,ridingRaft=false,downed=false,downedTimer=0,reviveProgress=0,won=false, gameOver=false, damagedAt=0, messageUntil=0, syncInFlight=0, localPose="idle",packHealReady=true;
-    let jumpHeight=0, jumpVelocity=0, jumpWasDown=false, swimDepth=0, cameraSwimPose=0, cameraInWater=false, heldRock:ThrowableRock|null=null, lastActionRock:ThrowableRock|null=null, isAiming=false, springCooldown=0, climbing=false, climbHeight=0,climbFort=-1,dungeonLevel=0,falling=false,fallY=0,fallVelocity=0,lastSupportY=surfaceHeight(0,90),smoothStairY=lastSupportY;const discovered=new Set<number>();
+    let jumpHeight=0, jumpVelocity=0, jumpWasDown=false, dragonFlightHeight=0, dragonOnFortressBridge=false, swimDepth=0, cameraSwimPose=0, cameraInWater=false, heldRock:ThrowableRock|null=null, lastActionRock:ThrowableRock|null=null, isAiming=false, springCooldown=0, climbing=false, climbHeight=0,climbFort=-1,dungeonLevel=0,falling=false,fallY=0,fallVelocity=0,lastSupportY=surfaceHeight(0,90),smoothStairY=lastSupportY;const discovered=new Set<number>();
     const velocity=new THREE.Vector3(),moveDir=new THREE.Vector3(),zeroVelocity=new THREE.Vector3(),proposedPosition=new THREE.Vector3(),zombieDirection=new THREE.Vector3(),wanderDirection=new THREE.Vector3(),enemyDirection=new THREE.Vector3(),cameraTarget=new THREE.Vector3(),desiredCamera=new THREE.Vector3();
     const sky=new THREE.Color(),nightSky=new THREE.Color(0x07121f),daySky=new THREE.Color(0x91d6d0),eventSky=new THREE.Color(0x521629);
     const starGeometry=new THREE.BufferGeometry(),starPositions:number[]=[];
@@ -608,8 +1110,28 @@ export default function IslandGame() {
     const notice=(message:string,secs=2.5)=>{messageUntil=performance.now()+secs*1000;setHud(h=>({...h,message}));};
     const rewardProgress=(xpGain:number,coinGain:number,achievement?:string)=>setProgress(p=>{const xp=p.xp+xpGain,level=1+Math.floor(xp/100),newAchievement=achievement&&!p.achievements.includes(achievement),achievements=newAchievement?[...p.achievements,achievement]:p.achievements;return {...p,xp,coins:p.coins+coinGain,level,unlocks:Math.max(p.unlocks,Math.floor(level/2)),achievements};});
     const sound=(freq:number,dur=.12)=>{try{const ac=new AudioContext();const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=freq;o.type="sine";g.gain.setValueAtTime(.07,ac.currentTime);g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+dur);o.connect(g).connect(ac.destination);o.start();o.stop(ac.currentTime+dur);}catch{}};
+    upgradeAction.current = (upgrade) => {
+      if (runUpgrades[upgrade]) {
+        notice("คุณคราฟต์อัปเกรดนี้แล้ว");
+        return;
+      }
+      const cost = UPGRADE_COSTS[upgrade];
+      if (wood < cost.wood || stone < cost.stone || scrap < cost.scrap || cells < cost.cells) {
+        notice(`วัสดุไม่พอ • ต้องใช้ไม้ ${cost.wood} หิน ${cost.stone} เศษโลหะ ${cost.scrap} เซลล์ ${cost.cells}`, 3);
+        return;
+      }
+      wood -= cost.wood;
+      stone -= cost.stone;
+      scrap -= cost.scrap;
+      cells -= cost.cells;
+      runUpgrades[upgrade] = true;
+      setCraftedUpgrades({ ...runUpgrades });
+      setHud(h => ({ ...h, wood, stone, scrap, cells }));
+      sound(720, .3);
+      notice("คราฟต์อัปเกรดสำเร็จ!", 3);
+    };
     const craftRaft=()=>{if(craftedRaft){notice("สร้างแพเรียบร้อยแล้ว • เข้าใกล้แพแล้วกด R");return;}if(wood>=collectionQuest.wood&&stone>=collectionQuest.stone){wood-=collectionQuest.wood;stone-=collectionQuest.stone;craftedRaft=true;raft.visible=true;sound(720,.35);notice("สร้างแพสำเร็จ! พบแพที่ชายฝั่งตะวันออก",4);}else notice(`ต้องการไม้ ${Math.max(0,collectionQuest.wood-wood)} และหิน ${Math.max(0,collectionQuest.stone-stone)} เพิ่ม`,3);};
-    const toggleRaft=()=>{if(!craftedRaft)return;if(ridingRaft){ridingRaft=false;notice("ลงจากแพแล้ว");}else if(player.position.distanceTo(raft.position)<4){ridingRaft=true;notice("ขึ้นแพแล้ว • ใช้ WASD บังคับ",3);}else notice("เดินหรือว่ายเข้าใกล้แพก่อน");};
+    const toggleRaft=()=>{if(mountedDragon){notice("กด T ลงจากมังกรก่อน");return;}if(!craftedRaft)return;if(ridingRaft){ridingRaft=false;notice("ลงจากแพแล้ว");}else if(player.position.distanceTo(raft.position)<4){ridingRaft=true;notice("ขึ้นแพแล้ว • ใช้ WASD บังคับ",3);}else notice("เดินหรือว่ายเข้าใกล้แพก่อน");};
     const updateRemoteRock=(avatar:RemoteAvatar,state:OnlineRock|null)=>{
       avatar.rockState=state;if(!state){if(avatar.rockMesh)avatar.rockMesh.visible=false;return;}
       if(!avatar.rockMesh){avatar.rockMesh=new THREE.Mesh(new THREE.DodecahedronGeometry(1,0),rockMaterial);avatar.rockMesh.castShadow=!lowPower;scene.add(avatar.rockMesh);}
@@ -622,7 +1144,7 @@ export default function IslandGame() {
     chatSend.current=(message:string)=>{const clean=message.trim();if(clean)void onlinePost({action:"chat",message:clean});};
     const offered=new Set<string>();
     const sendVoiceSignal=(to:string,payload:VoiceSignal["payload"])=>{void onlinePost({action:"signal",to,payload});};
-    const ensureVoicePeer=(remoteId:string)=>{let pc=voicePeers.get(remoteId);if(pc)return pc;pc=new RTCPeerConnection({iceServers:[{urls:["stun:stun.cloudflare.com:3478","stun:stun.l.google.com:19302"]}],iceCandidatePoolSize:6});voicePeers.set(remoteId,pc);localVoiceStream?.getAudioTracks().forEach(track=>{const sender=pc!.addTrack(track,localVoiceStream!),transceiver=pc!.getTransceivers().find(t=>t.sender===sender),codecs=RTCRtpReceiver.getCapabilities("audio")?.codecs??[],opus=codecs.filter(c=>c.mimeType.toLowerCase()==="audio/opus"),others=codecs.filter(c=>c.mimeType.toLowerCase()!=="audio/opus");if(transceiver&&opus.length)transceiver.setCodecPreferences([...opus,...others]);});pc.onicecandidate=e=>{if(e.candidate)sendVoiceSignal(remoteId,{type:"candidate",candidate:e.candidate.toJSON()});};pc.ontrack=e=>{let audio=voiceAudios.get(remoteId);if(!audio){audio=new Audio();audio.autoplay=true;audio.playsInline=true;audio.preload="auto";voiceAudios.set(remoteId,audio);}if(audio.srcObject!==e.streams[0])audio.srcObject=e.streams[0];audio.muted=false;audio.playbackRate=1;void audio.play().catch(()=>setVoiceError("แตะปุ่มไมค์อีกครั้งเพื่อเริ่มเล่นเสียง"));};pc.onconnectionstatechange=()=>{if(pc?.connectionState==="connected")setVoiceError("");if(pc?.connectionState==="failed"){pc.close();voicePeers.delete(remoteId);offered.delete(remoteId);pendingCandidates.delete(remoteId);setVoiceError("กำลังเชื่อมต่อเสียงใหม่อัตโนมัติ…");}};return pc;};
+    const ensureVoicePeer=(remoteId:string)=>{let pc=voicePeers.get(remoteId);if(pc)return pc;pc=new RTCPeerConnection({iceServers:[{urls:["stun:stun.cloudflare.com:3478","stun:stun.l.google.com:19302"]}],iceCandidatePoolSize:6});voicePeers.set(remoteId,pc);localVoiceStream?.getAudioTracks().forEach(track=>{const sender=pc!.addTrack(track,localVoiceStream!),transceiver=pc!.getTransceivers().find(t=>t.sender===sender),codecs=RTCRtpReceiver.getCapabilities("audio")?.codecs??[],opus=codecs.filter(c=>c.mimeType.toLowerCase()==="audio/opus"),others=codecs.filter(c=>c.mimeType.toLowerCase()!=="audio/opus");if(transceiver&&opus.length)transceiver.setCodecPreferences([...opus,...others]);});pc.onicecandidate=e=>{if(e.candidate)sendVoiceSignal(remoteId,{type:"candidate",candidate:e.candidate.toJSON()});};pc.ontrack=e=>{let audio=voiceAudios.get(remoteId);if(!audio){audio=new Audio();audio.autoplay=true;audio.preload="auto";voiceAudios.set(remoteId,audio);}if(audio.srcObject!==e.streams[0])audio.srcObject=e.streams[0];audio.muted=false;audio.playbackRate=1;void audio.play().catch(()=>setVoiceError("แตะปุ่มไมค์อีกครั้งเพื่อเริ่มเล่นเสียง"));};pc.onconnectionstatechange=()=>{if(pc?.connectionState==="connected")setVoiceError("");if(pc?.connectionState==="failed"){pc.close();voicePeers.delete(remoteId);offered.delete(remoteId);pendingCandidates.delete(remoteId);setVoiceError("กำลังเชื่อมต่อเสียงใหม่อัตโนมัติ…");}};return pc;};
     const flushCandidates=async(remoteId:string,pc:RTCPeerConnection)=>{const queue=pendingCandidates.get(remoteId)??[];pendingCandidates.delete(remoteId);for(const candidate of queue)try{await pc.addIceCandidate(candidate);}catch{}};
     processVoiceSignals=(signals,players)=>{if(!localVoiceStream||!onlineSession)return;for(const remote of players){if(onlineSession.playerId<remote.id&&!offered.has(remote.id)){offered.add(remote.id);const pc=ensureVoicePeer(remote.id);void pc.createOffer({offerToReceiveAudio:true}).then(offer=>pc.setLocalDescription(offer).then(()=>sendVoiceSignal(remote.id,{type:"offer",sdp:offer}))).catch(()=>offered.delete(remote.id));}}for(const signal of signals){if(seenSignals.has(signal.id))continue;seenSignals.add(signal.id);void(async()=>{const pc=ensureVoicePeer(signal.fromId),p=signal.payload;try{if(p.type==="offer"&&p.sdp){await pc.setRemoteDescription(p.sdp);await flushCandidates(signal.fromId,pc);const answer=await pc.createAnswer();await pc.setLocalDescription(answer);sendVoiceSignal(signal.fromId,{type:"answer",sdp:answer});}else if(p.type==="answer"&&p.sdp){await pc.setRemoteDescription(p.sdp);await flushCandidates(signal.fromId,pc);}else if(p.type==="candidate"&&p.candidate){if(pc.remoteDescription)await pc.addIceCandidate(p.candidate);else{const queue=pendingCandidates.get(signal.fromId)??[];queue.push(p.candidate);pendingCandidates.set(signal.fromId,queue);}}}catch{setVoiceError("สัญญาณเสียงขัดข้อง กำลังลองเชื่อมต่อใหม่…");}})();}};
     voiceToggle.current=()=>{void(async()=>{if(!onlineSession){setVoiceError("ต้องเข้าเล่นออนไลน์ก่อนจึงจะใช้เสียงได้");return;}if(localVoiceStream){localVoiceStream.getTracks().forEach(t=>t.stop());localVoiceStream=null;voicePeers.forEach(p=>p.close());voicePeers.clear();voiceAudios.forEach(a=>{a.pause();a.srcObject=null;});voiceAudios.clear();offered.clear();setVoiceEnabled(false);notice("ปิดไมโครโฟนแล้ว");return;}try{localVoiceStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:{ideal:1},sampleRate:{ideal:48000},sampleSize:{ideal:16},echoCancellation:true,noiseSuppression:true,autoGainControl:false},video:false});setVoiceEnabled(true);setVoiceError("");notice("เปิดเสียงตามระยะแล้ว • เข้าใกล้เพื่อนเพื่อคุย",4);void onlinePost({action:"sync",x:player.position.x,y:player.position.y,z:player.position.z,rotation:player.rotation.y,pose:localPose,appearance:appearanceRef.current});}catch{setVoiceError("ไม่สามารถเปิดไมโครโฟนได้ กรุณาอนุญาตสิทธิ์ไมค์ในเบราว์เซอร์");setVoiceEnabled(false);}})();};
@@ -636,7 +1158,7 @@ export default function IslandGame() {
       if (!heldRock) return;
       const rock = heldRock, mesh = activateRock(rock); scene.attach(mesh); mesh.scale.copy(rock.baseScale); rock.held = false;
       const direction = new THREE.Vector3(); camera.getWorldDirection(direction); direction.normalize();
-      const power = aimed ? 18 : 11; rock.velocity = direction.multiplyScalar(power).add(new THREE.Vector3(0, aimed ? 2.4 : 3.4, 0));
+      const power = (aimed ? 18 : 11) * (runUpgrades.sling ? 1.4 : 1); rock.velocity = direction.multiplyScalar(power).add(new THREE.Vector3(0, aimed ? 2.4 : 3.4, 0)); rock.hitDragon = false;
       lastActionRock = rock; heldRock = null; isAiming = false; setCarryingRock(false); setAimingRock(false); rightArm.remove(mesh); sound(aimed ? 310 : 260, .1); notice(aimed ? "โยนหินแบบเล็งเป้า" : "โยนหิน");
     };
     const collectSurvivalNode = () => {
@@ -671,54 +1193,360 @@ export default function IslandGame() {
       rightHand.updateWorldMatrix(true, false); const handScale = new THREE.Vector3(); rightHand.getWorldScale(handScale);
       mesh.scale.set(nearest.baseScale.x / handScale.x, nearest.baseScale.y / handScale.y, nearest.baseScale.z / handScale.z); mesh.position.set(0, -.2, -.16); mesh.rotation.set(.2, 0, 0); setCarryingRock(true); sound(190, .1); notice("ยกหินแล้ว • คลิกซ้ายเพื่อโยน หรือกดเมาส์ขวาค้างเพื่อเล็ง", 4);
     };
+    const fireMountedDragon = () => {
+      if (!mountedDragon || performance.now() < mountedDragon.fireAt) return;
+      const fireball = walkingDragonFireballs.find(projectile => !projectile.active) ?? createWalkingDragonFireball();
+      mountedDragon.root.updateWorldMatrix(true, false);
+      walkingDragonMuzzle.set(0, 5.35, 3.3);
+      mountedDragon.root.localToWorld(walkingDragonMuzzle);
+      camera.getWorldDirection(walkingDragonAimDirection);
+      walkingDragonFireTarget.copy(camera.position).addScaledVector(walkingDragonAimDirection, 80);
+      fireball.root.position.copy(walkingDragonMuzzle);
+      fireball.velocity.copy(walkingDragonFireTarget).sub(walkingDragonMuzzle).normalize().multiplyScalar(22);
+      fireball.age = 0;
+      fireball.owner = "ridden";
+      fireball.active = true;
+      fireball.root.visible = true;
+      fireball.root.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), fireball.velocity.clone().normalize());
+      mountedDragon.fireAt = performance.now() + 850;
+      sound(240, 0.14);
+    };
+    const damageLivingTargetAt = (position: THREE.Vector3, now: number) => {
+      for (const zombie of zombies) {
+        if (zombie.dead || !zombie.root.visible) continue;
+        const scale = zombie.root.scale.y;
+        walkingDragonHitCenter.set(
+          zombie.root.position.x,
+          zombie.root.position.y + 1.2 * scale,
+          zombie.root.position.z,
+        );
+        if (position.distanceTo(walkingDragonHitCenter) > 1.25 * scale) continue;
+        zombie.health = Math.max(0, zombie.health - 2);
+        zombie.dead = zombie.health === 0;
+        zombie.stunnedUntil = now + 1200;
+        if (zombie.dead) zombie.root.visible = false;
+        sound(zombie.dead ? 100 : 150, 0.16);
+        notice(zombie.dead ? "ลูกไฟมังกรเผาซอมบี้จนพ่ายแพ้!" : `ซอมบี้โดนไฟมังกร! HP ${zombie.health}/${zombie.maxHealth}`, 2);
+        return true;
+      }
+      for (const controller of walkingDragonControllers) {
+        if (controller === mountedDragon || controller.defeated || !controller.root.visible) continue;
+        walkingDragonHitCenter.copy(controller.root.position);
+        walkingDragonHitCenter.y += 3;
+        if (position.distanceTo(walkingDragonHitCenter) > 2.8) continue;
+        controller.health = Math.max(0, controller.health - 2);
+        controller.aggro = controller.health > 0;
+        controller.fireAt = now + 800;
+        controller.defeated = controller.health === 0;
+        if (controller.defeated) {
+          controller.root.rotation.z = -0.14;
+          controller.root.rotation.x = 0.06;
+          rewardProgress(50, 30, "ผู้พิชิตมังกร");
+        }
+        setDragonHud({ health: controller.health, maxHealth: controller.maxHealth, defeated: controller.defeated });
+        dragonHudVisibleUntil = now + 3500;
+        sound(controller.defeated ? 90 : 140, 0.18);
+        notice(controller.defeated
+          ? "ลูกไฟมังกรทำให้มังกรพ่ายแพ้! กด T เพื่อขี่"
+          : `มังกรโดนไฟ! HP ${controller.health}/${controller.maxHealth}`, 2.5);
+        return true;
+      }
+      for (const animal of animals) {
+        if (animal.userData.dead) continue;
+        walkingDragonHitCenter.set(animal.position.x, animal.position.y + 0.8, animal.position.z);
+        if (position.distanceTo(walkingDragonHitCenter) > 1) continue;
+        animal.userData.health = Math.max(0, Number(animal.userData.health) - 1);
+        animal.userData.dead = animal.userData.health === 0;
+        if (animal.userData.dead) animal.visible = false;
+        sound(animal.userData.dead ? 100 : 150, 0.12);
+        notice(animal.userData.dead ? "สัตว์ป่าโดนไฟจนพ่ายแพ้" : `สัตว์ป่าโดนไฟ! HP ${animal.userData.health}/3`, 2);
+        return true;
+      }
+      for (const fishEntity of fish) {
+        if (fishEntity.userData.dead || position.distanceTo(fishEntity.position) > 0.65) continue;
+        fishEntity.userData.health = 0;
+        fishEntity.userData.dead = true;
+        fishEntity.visible = false;
+        sound(100, 0.12);
+        notice("ปลาโดนไฟมังกรจนพ่ายแพ้", 2);
+        return true;
+      }
+      for (const flyingDragon of [dragon, ...dragonVariants.map(variant => variant.root)]) {
+        if (flyingDragon.userData.dead || !flyingDragon.visible) continue;
+        walkingDragonHitCenter.copy(flyingDragon.position);
+        if (position.distanceTo(walkingDragonHitCenter) > 5.5) continue;
+        flyingDragon.userData.health = Math.max(0, Number(flyingDragon.userData.health) - 2);
+        flyingDragon.userData.dead = flyingDragon.userData.health === 0;
+        if (flyingDragon.userData.dead) flyingDragon.visible = false;
+        sound(flyingDragon.userData.dead ? 90 : 140, 0.18);
+        notice(flyingDragon.userData.dead
+          ? "มังกรบินโดนไฟจนพ่ายแพ้"
+          : `มังกรบินโดนไฟ! HP ${flyingDragon.userData.health}/12`, 2);
+        return true;
+      }
+      if (!enemy.userData.dead && enemy.visible) {
+        walkingDragonHitCenter.set(enemy.position.x, enemy.position.y + 1.2, enemy.position.z);
+        if (position.distanceTo(walkingDragonHitCenter) <= 1.5) {
+          enemy.userData.health = Math.max(0, Number(enemy.userData.health) - 2);
+          enemy.userData.dead = enemy.userData.health === 0;
+          if (enemy.userData.dead) enemy.visible = false;
+          sound(enemy.userData.dead ? 90 : 140, 0.18);
+          notice(enemy.userData.dead
+            ? "เงามืดถูกไฟมังกรเผาจนพ่ายแพ้"
+            : `เงามืดโดนไฟมังกร! HP ${enemy.userData.health}/12`, 2);
+          return true;
+        }
+      }
+      return false;
+    };
     const onlineRock = (): OnlineRock | null => { const rock = heldRock ?? lastActionRock; if (!rock) return null; const mesh = activateRock(rock), v = rock.velocity ?? new THREE.Vector3(), geometryScale = rock.instanceIndex === null ? rock.radius : 1; return { id: rock.id, state: rock.held ? "held" : rock.velocity ? "thrown" : "rest", radius: rock.radius, scale: [rock.baseScale.x * geometryScale, rock.baseScale.y * geometryScale, rock.baseScale.z * geometryScale], position: [mesh.position.x, mesh.position.y, mesh.position.z], velocity: [v.x, v.y, v.z] }; };
-    rockAction.current = pickupOrThrow;
+    rockAction.current = () => mountedDragon ? fireMountedDragon() : pickupOrThrow();
     const fortressClimbPosition = (fort: Fortress, height: number) => {
       if (fort !== fortresses[5]) return { x: fort.x, z: fort.ladderZ };
       const stairRadius = fort.radius + 2.2, stairTurns = 3.5, progress = THREE.MathUtils.clamp((height - specialStairStart) / (fort.height - specialStairStart), 0, 1), angle = -Math.PI / 2 + progress * stairTurns * Math.PI * 2;
       return { x: fort.x + Math.cos(angle) * stairRadius, z: fort.z + Math.sin(angle) * stairRadius };
     };
     const toggleFortressLadder = () => { if (climbing && climbFort >= 0) { climbing = false; climbFort = -1; velocity.set(0, 0, 0); notice("ปล่อยบันไดแล้ว", 1.5); return; } let nearest = -1, best = 2.25; fortresses.forEach((f, i) => { const d = Math.hypot(player.position.x - f.x, player.position.z - f.ladderZ); if (d < best) { best = d; nearest = i; } }); if (nearest < 0) { notice("เข้าใกล้บันไดป้อมก่อนกด L", 2); return; } const f = fortresses[nearest]; climbing = true; climbFort = nearest; climbHeight = THREE.MathUtils.clamp(player.position.y - f.ground, 0, f.height + .2); jumpHeight = 0; velocity.set(0, 0, 0); notice("เกาะบันไดแล้ว • W ขึ้น • S ลง • L ปล่อย", 3); };
-    const useSurvivalPack = () => { if (!packHealReady) { notice("ชุดปฐมพยาบาลในกระเป๋าถูกใช้ไปแล้ว", 2); return; } if (health >= 100) { notice("กระเป๋าเอาตัวรอด: ชุดปฐมพยาบาลพร้อมใช้ • กด B เมื่อบาดเจ็บ", 3); return; } health = Math.min(100, health + 35); packHealReady = false; sound(690, .25); notice("ใช้ชุดปฐมพยาบาลจากกระเป๋า • ฟื้นพลังชีวิต 35", 3); };
+    const applyFirstAidPack = () => { if (!packHealReady) { notice("ชุดปฐมพยาบาลในกระเป๋าถูกใช้ไปแล้ว", 2); return; } if (health >= 100) { notice("กระเป๋าเอาตัวรอด: ชุดปฐมพยาบาลพร้อมใช้ • กด B เมื่อบาดเจ็บ", 3); return; } health = Math.min(100, health + 35); packHealReady = false; sound(690, .25); notice("ใช้ชุดปฐมพยาบาลจากกระเป๋า • ฟื้นพลังชีวิต 35", 3); };
     const buildBaseWall = () => { if (dungeonLevel > 0) { notice("สร้างฐานได้เฉพาะบนเกาะ", 2); return; } if (wood < 2 || stone < 1) { notice("กำแพงต้องใช้ไม้ 2 และหิน 1", 2); return; } wood -= 2; stone -= 1; const forward = new THREE.Vector3(0, 0, -4).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation.y), x = player.position.x + forward.x, z = player.position.z + forward.z, y = surfaceHeight(x, z), wall = addMesh(new THREE.BoxGeometry(5, 2.8, .55), mat(0x795234), x, y + 1.4, z); wall.rotation.y = player.rotation.y; builtWalls.push(wall); colliders.push({ x, z, r: 2.1 }); rewardProgress(12, 3, builtWalls.length >= 2 ? "ช่างสร้างฐาน" : undefined); notice("สร้างกำแพงฐานแล้ว", 2); };
-    const useDungeonDoor = () => { let nearest = -1, best = 4.2; dungeonDoors.forEach((door, i) => { const distance = Math.hypot(player.position.x - door.x, player.position.z - door.z); if (Math.abs(player.position.y - door.y) < 5 && distance < best) { best = distance; nearest = i; } }); if (nearest < 0) { notice("เข้าใกล้ประตูรูนก่อนกด G", 2); return; } const pair = nearest % 2 === 0 ? nearest + 1 : nearest - 1, destination = dungeonDoors[pair]; dungeonLevel = destination.level; player.position.set(destination.x, destination.y + .12, destination.z + (pair % 2 === 0 ? -3 : 3)); velocity.set(0, 0, 0); jumpHeight = 0; jumpVelocity = 0; falling = false; lastSupportY = destination.y; sound(410, .2); notice(destination.level === 0 ? "กลับขึ้นสู่เกาะแล้ว" : `เข้าสู่ดันเจี้ยนชั้น ${destination.level}`, 2.5); };
-    const down = (e: KeyboardEvent) => { keys.current[e.code] = true; if (e.code === "KeyE") repair.current(); if (e.code === "KeyF" && !e.repeat) pickupOrThrow(); if (e.code === "KeyG" && !e.repeat) useDungeonDoor(); if (e.code === "KeyQ" && !e.repeat) craftRaft(); if (e.code === "KeyR" && !e.repeat) toggleRaft(); if (e.code === "KeyL" && !e.repeat) toggleFortressLadder(); if (e.code === "KeyB" && !e.repeat) useSurvivalPack(); if (e.code === "KeyV" && !e.repeat) buildBaseWall(); if (e.code === "Escape") document.exitPointerLock?.(); };
+    const openDungeonDoor = () => { if(mountedDragon){notice("ลงจากมังกรก่อนเข้าประตูรูน");return;}let nearest = -1, best = 4.2; dungeonDoors.forEach((door, i) => { const distance = Math.hypot(player.position.x - door.x, player.position.z - door.z); if (Math.abs(player.position.y - door.y) < 5 && distance < best) { best = distance; nearest = i; } }); if (nearest < 0) { notice("เข้าใกล้ประตูรูนก่อนกด G", 2); return; } const pair = nearest % 2 === 0 ? nearest + 1 : nearest - 1, destination = dungeonDoors[pair]; dungeonLevel = destination.level; player.position.set(destination.x, destination.y + .12, destination.z + (pair % 2 === 0 ? -3 : 3)); velocity.set(0, 0, 0); jumpHeight = 0; jumpVelocity = 0; falling = false; lastSupportY = destination.y; sound(410, .2); notice(destination.level === 0 ? "กลับขึ้นสู่เกาะแล้ว" : `เข้าสู่ดันเจี้ยนชั้น ${destination.level}`, 2.5); };
+    mountDragonAction.current = () => {
+      if (mountedDragon) {
+        falling = dragonFlightHeight > 0.1 || jumpHeight > 0.1;
+        if (falling) {
+          fallY = player.position.y;
+          fallVelocity = 0;
+          const bridgeLandingY = fortressBridgeHeight(mountedDragon.root.position.x, mountedDragon.root.position.z);
+          const onBridge = dragonOnFortressBridge && Number.isFinite(bridgeLandingY);
+          const onSecondIsland = Math.hypot(mountedDragon.root.position.x - SECOND_X, mountedDragon.root.position.z - SECOND_Z) < SECOND_RADIUS;
+          const floorY = onSecondIsland
+            ? secondSurfaceHeight(mountedDragon.root.position.x, mountedDragon.root.position.z)
+            : surfaceHeight(mountedDragon.root.position.x, mountedDragon.root.position.z);
+          mountedDragon.landingY = onBridge ? bridgeLandingY + .12 : floorY;
+        } else {
+          mountedDragon.landingY = null;
+        }
+        mountedDragon.ridden = false;
+        mountedDragon = null;
+        dragonFlightHeight = 0;
+        dragonOnFortressBridge = false;
+        jumpHeight = 0;
+        jumpVelocity = 0;
+        model.visible = true;
+        setDragonRideState("hidden");
+        setAimingDragon(false);
+        velocity.set(0, 0, 0);
+        notice("ลงจากมังกรแล้ว", 2);
+        return;
+      }
+      const nearest = walkingDragonControllers
+        .filter(controller => controller.defeated)
+        .map(controller => ({
+          controller,
+          distance: Math.hypot(player.position.x - controller.root.position.x, player.position.z - controller.root.position.z),
+        }))
+        .sort((a, b) => a.distance - b.distance)[0];
+      if (!nearest || nearest.distance > 10) {
+        notice("เข้าใกล้มังกรที่พ่ายแพ้ก่อน");
+        return;
+      }
+      mountedDragon = nearest.controller;
+      nearest.controller.ridden = true;
+      nearest.controller.landingY = null;
+      dragonFlightHeight = 0;
+      dragonOnFortressBridge = false;
+      model.visible = false;
+      setDragonRideState("riding");
+      setAimingDragon(false);
+      player.position.set(nearest.controller.root.position.x, surfaceHeight(nearest.controller.root.position.x, nearest.controller.root.position.z), nearest.controller.root.position.z);
+      yaw = nearest.controller.root.rotation.y + Math.PI;
+      player.rotation.y = yaw;
+      pitch = 0.22;
+      velocity.set(0, 0, 0);
+      notice("ควบคุมมังกรแล้ว • WASD เคลื่อนที่ • ↑/↓ บินขึ้น/ลง • Shift วิ่ง • F/คลิกซ้าย พ่นไฟ • T ลง", 4);
+    };
+    const down = (e: KeyboardEvent) => {
+      keys.current[e.code] = true;
+      if (e.code === "KeyE") repair.current();
+      if (e.code === "KeyF" && !e.repeat) {
+        if (mountedDragon) fireMountedDragon(); else pickupOrThrow();
+      }
+      if (e.code === "KeyG" && !e.repeat) openDungeonDoor();
+      if (e.code === "KeyQ" && !e.repeat) craftRaft();
+      if (e.code === "KeyR" && !e.repeat) toggleRaft();
+      if (e.code === "KeyT" && !e.repeat) mountDragonAction.current();
+      if (e.code === "KeyL" && !e.repeat) toggleFortressLadder();
+      if (e.code === "KeyB" && !e.repeat) applyFirstAidPack();
+      if (e.code === "KeyV" && !e.repeat) buildBaseWall();
+      if (mountedDragon && (e.code === "ArrowUp" || e.code === "ArrowDown")) e.preventDefault();
+      if (e.code === "Escape") document.exitPointerLock?.();
+    };
     const up = (e: KeyboardEvent) => { keys.current[e.code] = false; };
     const moveMouse = (e: MouseEvent) => { if (document.pointerLockElement === renderer.domElement) { yaw -= e.movementX * .0024; pitch = THREE.MathUtils.clamp(pitch + e.movementY * .002, cameraInWater ? -1.12 : -.32, cameraInWater ? 1.12 : .92); } };
-    const mouseDown = (e: MouseEvent) => { if (document.pointerLockElement !== renderer.domElement) return; if (e.button === 2 && heldRock) { isAiming = true; setAimingRock(true); } else if (e.button === 0 && heldRock) throwHeldRock(isAiming); };
-    const mouseUp = (e: MouseEvent) => { if (e.button === 2) { isAiming = false; setAimingRock(false); } };
+    let lastAimTouch: { x: number; y: number } | null = null;
+    const startAimTouch = (e: TouchEvent) => {
+      if (!mountedDragon || e.touches.length !== 1) return;
+      lastAimTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      setAimingDragon(true);
+    };
+    const moveAimTouch = (e: TouchEvent) => {
+      if (!mountedDragon || !lastAimTouch || e.touches.length !== 1) return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      yaw -= (touch.clientX - lastAimTouch.x) * .006;
+      pitch = THREE.MathUtils.clamp(pitch + (touch.clientY - lastAimTouch.y) * .004, -.3, .8);
+      lastAimTouch = { x: touch.clientX, y: touch.clientY };
+    };
+    const endAimTouch = () => { lastAimTouch = null; setAimingDragon(false); };
+    const mouseDown = (e: MouseEvent) => { if (document.pointerLockElement !== renderer.domElement) return; if (e.button === 2 && mountedDragon) setAimingDragon(true); else if (e.button === 2 && heldRock) { isAiming = true; setAimingRock(true); } else if (e.button === 0 && mountedDragon) fireMountedDragon(); else if (e.button === 0 && heldRock) throwHeldRock(isAiming); };
+    const mouseUp = (e: MouseEvent) => { if (e.button === 2) { setAimingDragon(false); isAiming = false; setAimingRock(false); } };
+    const pointerLockChanged = () => { if (document.pointerLockElement !== renderer.domElement) { setAimingDragon(false); setAimingRock(false); isAiming = false; } };
     const preventMenu = (e: Event) => e.preventDefault();
-    addEventListener("keydown", down); addEventListener("keyup", up); addEventListener("mousemove", moveMouse); addEventListener("mousedown", mouseDown); addEventListener("mouseup", mouseUp); renderer.domElement.addEventListener("contextmenu", preventMenu);
-    renderer.domElement.addEventListener("click", () => { if (started && !end) renderer.domElement.requestPointerLock?.(); });
+    addEventListener("keydown", down); addEventListener("keyup", up); addEventListener("mousemove", moveMouse); addEventListener("mousedown", mouseDown); addEventListener("mouseup", mouseUp); document.addEventListener("pointerlockchange", pointerLockChanged); renderer.domElement.addEventListener("touchstart", startAimTouch, { passive: true }); renderer.domElement.addEventListener("touchmove", moveAimTouch, { passive: false }); renderer.domElement.addEventListener("touchend", endAimTouch); renderer.domElement.addEventListener("touchcancel", endAimTouch); renderer.domElement.addEventListener("contextmenu", preventMenu);
+    renderer.domElement.addEventListener("click", () => { if (started && !gameOver) renderer.domElement.requestPointerLock?.(); });
 
+    let raf=0;
     const tick = () => {
-      const raf = requestAnimationFrame(tick); const now = performance.now(); const dt = Math.min((now - last) / 1000, .05); last = now;
+      raf = requestAnimationFrame(tick); const now = performance.now(); const dt = Math.min((now - last) / 1000, .05); last = now;
       if (started && !gameOver && !paused.current) {
         gameTime = (gameTime + dt / 230) % 1; const angle = gameTime * Math.PI * 2; const daylight = THREE.MathUtils.clamp(Math.sin(angle) * .85 + .25, .07, 1);
         sun.position.set(Math.cos(angle) * 45, Math.sin(angle) * 55, 20); sun.intensity = .35 + daylight * 3.1; hemi.intensity = .3 + daylight * 1.9;
-        sky.copy(nightSky).lerp(daySky, daylight); scene.background = sky; scene.fog.color.copy(sky);
-        const night = daylight < .33, nightness = 1 - THREE.MathUtils.smoothstep(daylight, .07, .4), nightEvent = night && Math.floor(gameTime * 72) % 3 === 0; if (nightEvent) { sky.lerp(eventSky, .38); scene.fog.color.copy(sky); scene.fog.density = .0052; } else scene.fog.density = .0032; enemyLight.intensity = night ? 3 : 0; beacon.intensity = won ? 12 : (night ? 2.5 : 0);
+        sky.copy(nightSky).lerp(daySky, daylight); scene.background = sky; fog.color.copy(sky);
+        const night = daylight < .33, nightness = 1 - THREE.MathUtils.smoothstep(daylight, .07, .4), nightEvent = night && Math.floor(gameTime * 72) % 3 === 0; if (nightEvent) { sky.lerp(eventSky, .38); fog.color.copy(sky); fog.density = .0052; } else fog.density = .0032; enemyLight.intensity = night ? 3 : 0; beacon.intensity = won ? 12 : (night ? 2.5 : 0);
         stars.visible=nightness>.01;starMaterial.opacity=nightness*.88;aurora.visible=nightness>.01;auroraMaterials.forEach((material,index)=>{material.opacity=nightness*(.075+Math.sin(now*.0007+index)*.018);});aurora.rotation.y=now*.000018;
         const onMainNow = Math.hypot(player.position.x, player.position.z) < PLAY_RADIUS, onSecondNow = Math.hypot(player.position.x - SECOND_X, player.position.z - SECOND_Z) < SECOND_RADIUS - 1, bridgeArea = onBridge(player.position.x, player.position.z), fortressBridgeY = fortressBridgeHeight(player.position.x, player.position.z), onFortressBridge = Number.isFinite(fortressBridgeY) && player.position.y > fortressBridgeY - 1.15, onBridgeNow = (bridgeArea && player.position.y > BRIDGE_Y - 1.15) || onFortressBridge, underBridge = bridgeArea && !onBridgeNow, inOcean = dungeonLevel === 0 && (underBridge || (!onMainNow && !onSecondNow && !onBridgeNow)) && player.position.x > WORLD_MIN_X && player.position.x < WORLD_MAX_X && Math.abs(player.position.z) < WORLD_Z_LIMIT;
         const inSwamp = Math.hypot(player.position.x - SWAMP_X, player.position.z - SWAMP_Z) < SWAMP_RADIUS - 2 && surfaceHeight(player.position.x, player.position.z) < SWAMP_WATER - .7;
-        const swimming = dungeonLevel === 0 && (inSwamp || inOcean) && jumpHeight <= .01 && !falling, waterLevel = inOcean ? OCEAN_LEVEL : SWAMP_WATER;
+        const swimming = dungeonLevel === 0 && (inSwamp || inOcean) && jumpHeight <= .01 && !falling && !mountedDragon, waterLevel = inOcean ? OCEAN_LEVEL : SWAMP_WATER;
         const wantsDive = swimming && !!keys.current.KeyC, fastDive = wantsDive && !!keys.current.ShiftLeft;
-        const fwd = (keys.current.KeyW || keys.current.ArrowUp ? 1 : 0) - (keys.current.KeyS || keys.current.ArrowDown ? 1 : 0);
+        const fwd = (keys.current.KeyW || (!mountedDragon && keys.current.ArrowUp) ? 1 : 0)
+          - (keys.current.KeyS || (!mountedDragon && keys.current.ArrowDown) ? 1 : 0);
         const side = (keys.current.KeyD || keys.current.ArrowRight ? 1 : 0) - (keys.current.KeyA || keys.current.ArrowLeft ? 1 : 0);
         moveDir.set(side, 0, -fwd).applyAxisAngle(THREE.Object3D.DEFAULT_UP, yaw); if (downed || climbing) moveDir.set(0, 0, 0);
-        if (moveDir.lengthSq() > 0) { moveDir.normalize(); const skillBoost = Math.min(1.8, (progressRef.current.level - 1) * .12); velocity.lerp(moveDir.multiplyScalar((swimming ? (keys.current.ShiftLeft ? (wantsDive ? 6.2 : 5.8) : 3.5) : keys.current.ShiftLeft ? 9 : 6) + skillBoost), .16); player.rotation.y = Math.atan2(-velocity.x, -velocity.z); }
-        else velocity.lerp(zeroVelocity, .13);
+        if (moveDir.lengthSq() > 0) {
+          moveDir.normalize();
+          const skillBoost = Math.min(1.8, (progressRef.current.level - 1) * .12);
+          const moveSpeed = mountedDragon
+            ? (keys.current.ShiftLeft ? 16 : 12)
+            : swimming
+              ? (keys.current.ShiftLeft ? (wantsDive ? 6.2 : 5.8) : 3.5)
+              : keys.current.ShiftLeft ? 9 : 6;
+          const targetSpeed = (moveSpeed + skillBoost) * (ridingRaft && runUpgrades.sail ? 1.35 : 1);
+          if (mountedDragon) {
+            velocity.lerp(moveDir.multiplyScalar(targetSpeed), 1 - Math.exp(-8 * dt));
+          } else {
+            velocity.lerp(moveDir.multiplyScalar(targetSpeed), .16);
+          }
+          player.rotation.y = Math.atan2(-velocity.x, -velocity.z);
+        } else if (mountedDragon) {
+          velocity.lerp(zeroVelocity, 1 - Math.exp(-5 * dt));
+        } else {
+          velocity.lerp(zeroVelocity, .13);
+        }
         if (heldRock && isAiming) player.rotation.y = yaw;
         const proposed = proposedPosition.copy(player.position).addScaledVector(velocity, dt); proposed.y = 0;
-        const activeColliders = dungeonLevel > 0 ? dungeonColliders : colliders; for (const c of activeColliders) { if ("floor" in c && c.floor !== dungeonLevel) continue; if ("minY" in c && ((c.minY !== undefined && player.position.y < c.minY) || (c.maxY !== undefined && player.position.y > c.maxY))) continue; const colliderGround = surfaceHeight(proposed.x, proposed.z), elevatedBridge = dungeonLevel === 0 && Number.isFinite(fortressBridgeHeight(proposed.x, proposed.z)) && player.position.y > colliderGround + 3; if (elevatedBridge) continue; const dx = proposed.x - c.x, dz = proposed.z - c.z, min = c.r + .52; if (Math.abs(dx) > min || Math.abs(dz) > min) continue; const dist = Math.hypot(dx, dz); if (dist < min) { const nx = dist > .001 ? dx / dist : 1, nz = dist > .001 ? dz / dist : 0; proposed.x = c.x + nx * min; proposed.z = c.z + nz * min; velocity.multiplyScalar(.72); } }
+        const activeColliders = dungeonLevel > 0 ? dungeonColliders : colliders; for (const c of activeColliders) { if ("floor" in c && c.floor !== dungeonLevel) continue; if (mountedDragon && dragonFlightHeight > 3.5) continue; if ("minY" in c && ((c.minY !== undefined && player.position.y < c.minY) || (c.maxY !== undefined && player.position.y > c.maxY))) continue; const colliderGround = surfaceHeight(proposed.x, proposed.z), elevatedBridge = dungeonLevel === 0 && Number.isFinite(fortressBridgeHeight(proposed.x, proposed.z)) && player.position.y > colliderGround + 3; if (elevatedBridge) continue; const dx = proposed.x - c.x, dz = proposed.z - c.z, min = c.r + (mountedDragon ? c.fortressWall ? .55 : walkingDragonRadius : .52); if (Math.abs(dx) > min || Math.abs(dz) > min) continue; const dist = Math.hypot(dx, dz); if (dist < min) { const nx = dist > .001 ? dx / dist : 1, nz = dist > .001 ? dz / dist : 0; proposed.x = c.x + nx * min; proposed.z = c.z + nz * min; velocity.multiplyScalar(.72); } }
         const proposedOnMain = Math.hypot(proposed.x, proposed.z) < PLAY_RADIUS, proposedOnSecond = Math.hypot(proposed.x - SECOND_X, proposed.z) < SECOND_RADIUS - 1, proposedBridge = onBridge(proposed.x, proposed.z), proposedFortressBridge = Number.isFinite(fortressBridgeHeight(proposed.x, proposed.z)), shoreEntry = dungeonLevel === 0 && !inOcean && !proposedOnMain && !proposedOnSecond && !proposedBridge && !proposedFortressBridge; const outsideWorld = proposed.x <= WORLD_MIN_X || proposed.x >= WORLD_MAX_X || Math.abs(proposed.z) >= WORLD_Z_LIMIT; if (outsideWorld) { proposed.x = THREE.MathUtils.clamp(proposed.x, WORLD_MIN_X + 1, WORLD_MAX_X - 1); proposed.z = THREE.MathUtils.clamp(proposed.z, -WORLD_Z_LIMIT + 1, WORLD_Z_LIMIT - 1); velocity.multiplyScalar(-.18); if (now - lastBoundaryNotice > 1800) { lastBoundaryNotice = now; notice("ถึงขอบเขตปลอดภัยของทะเลแล้ว", 1.5); } } player.position.x = proposed.x; player.position.z = proposed.z;
+        if (dungeonLevel === 0) {
+          for (const controller of walkingDragonControllers) {
+            const root = controller.root;
+            if (!root.visible || player.position.y >= root.position.y + 5.5) continue;
+            if (controller === mountedDragon) continue;
+            const dx = proposed.x - root.position.x;
+            const dz = proposed.z - root.position.z;
+            const minDistance = walkingDragonRadius + 0.52;
+            const distance = Math.hypot(dx, dz);
+            if (distance < minDistance) {
+              const normalX = distance > 0.001 ? dx / distance : 1;
+              const normalZ = distance > 0.001 ? dz / distance : 0;
+              proposed.x = root.position.x + normalX * minDistance;
+              proposed.z = root.position.z + normalZ * minDistance;
+              player.position.x = proposed.x;
+              player.position.z = proposed.z;
+              velocity.multiplyScalar(0.72);
+            }
+          }
+        }
         const jumpDown = !!keys.current.Space;
         if (jumpDown && !jumpWasDown && jumpHeight <= .001 && !swimming && !falling) { jumpVelocity = 7.2; sound(260, .08); }
         jumpWasDown = jumpDown; jumpVelocity -= 18 * dt; jumpHeight += jumpVelocity * dt;
         if (jumpHeight < 0) { jumpHeight = 0; jumpVelocity = 0; }
-        springCooldown = Math.max(0, springCooldown - dt); if (jumpHeight < .08 && springCooldown <= 0) { for (const spring of springs) { if (Math.hypot(player.position.x - spring.position.x, player.position.z - spring.position.z) < 1.65) { jumpVelocity = 15.5; jumpHeight = .12; springCooldown = .8; sound(520, .22); notice("สปริงดีดตัว!", 1.2); break; } } }
-        const ladderNear = Math.hypot(player.position.x - OBS_X, player.position.z - (OBS_Z - 3.15)) < 1.35; if (!climbing && ladderNear && (keys.current.KeyW || keys.current.ArrowUp)) { climbing = true; climbFort = -1; climbHeight = Math.max(0, player.position.y - obsGround); jumpHeight = 0; velocity.set(0, 0, 0); notice("กำลังปีนบันได • W ขึ้น • S ลง", 2); } if (climbing) { const fort = climbFort >= 0 ? fortresses[climbFort] : null, base = fort?.ground ?? obsGround, max = fort?.height ?? OBS_HEIGHT; if (fort) { const climbPosition = fortressClimbPosition(fort, climbHeight); player.position.x = climbPosition.x; player.position.z = climbPosition.z; } else { player.position.x = OBS_X; player.position.z = OBS_Z - 3.15; } const climbInput = (keys.current.KeyW || keys.current.ArrowUp ? 1 : 0) - (keys.current.KeyS || keys.current.ArrowDown ? 1 : 0); climbHeight = THREE.MathUtils.clamp(climbHeight + climbInput * dt * 6.2, 0, max + .2); if (climbHeight <= 0 && climbInput < 0) { climbing = false; climbFort = -1; } if (fort && climbHeight >= fort.height - .05 && climbInput > 0) { climbing = false; player.position.set(fort.x, fort.ground + fort.height + .5, fort.z); climbFort = -1; notice("ขึ้นถึงยอดป้อมแล้ว • สามารถเดินบนลานได้", 2.5); } }
-        const terrainY = dungeonLevel > 0 ? DUNGEON_LEVELS[dungeonLevel - 1] : inOcean ? OCEAN_LEVEL - 11 : surfaceHeight(player.position.x, player.position.z); const bridgeY = fortressBridgeHeight(player.position.x, player.position.z), bridgeSupportsPlayer = Number.isFinite(bridgeY) && player.position.y > terrainY + 2; let platformY = bridgeSupportsPlayer ? Math.max(terrainY, bridgeY) : terrainY, stairStepY = -Infinity; for (const step of specialStairSteps) { if (Math.hypot(player.position.x - step.x, player.position.z - step.z) < step.r + .45 && player.position.y > step.y - .9) { stairStepY = Math.max(stairStepY, step.y + .1); platformY = Math.max(platformY, step.y + .1); } } for (const f of fortresses) { if (Math.hypot(player.position.x - f.x, player.position.z - f.z) < f.radius + .45 && player.position.y > f.ground + f.height - 2) platformY = Math.max(platformY, f.ground + f.height + .5); } if (stairStepY > terrainY && !jumpHeight && !swimming && !falling) smoothStairY = THREE.MathUtils.lerp(smoothStairY, stairStepY, 1 - Math.exp(-dt * 12)); else if (stairStepY <= terrainY) smoothStairY = platformY; const groundY = stairStepY > terrainY ? Math.max(terrainY, smoothStairY) : platformY, maxDepth = inOcean ? 9 : Math.max(.12, SWAMP_WATER - groundY - .75);
+        if (mountedDragon) {
+          const flightInput = (keys.current.ArrowUp ? 1 : 0) - (keys.current.ArrowDown ? 1 : 0);
+          dragonFlightHeight = THREE.MathUtils.clamp(dragonFlightHeight + flightInput * 12 * dt, 0, maxDragonFlightHeight);
+        }
+        springCooldown = Math.max(0, springCooldown - dt); if (!mountedDragon && jumpHeight < .08 && springCooldown <= 0) { for (const spring of springs) { if (Math.hypot(player.position.x - spring.position.x, player.position.z - spring.position.z) < 1.65) { jumpVelocity = 15.5; jumpHeight = .12; springCooldown = .8; sound(520, .22); notice("สปริงดีดตัว!", 1.2); break; } } }
+        const ladderNear = Math.hypot(player.position.x - OBS_X, player.position.z - (OBS_Z - 3.15)) < 1.35;
+        if(!mountedDragon && !climbing && ladderNear && (keys.current.KeyW || keys.current.ArrowUp)) {
+          climbing = true;
+          climbFort = -1;
+          climbHeight = Math.max(0, player.position.y - obsGround);
+          jumpHeight = 0;
+          velocity.set(0, 0, 0);
+          notice("กำลังปีนบันได • W ขึ้น • S ลง", 2);
+        }
+        if (climbing) {
+          const fort = climbFort >= 0 ? fortresses[climbFort] : null;
+          const max = fort?.height ?? OBS_HEIGHT;
+          if (fort) {
+            const climbPosition = fortressClimbPosition(fort, climbHeight);
+            player.position.x = climbPosition.x;
+            player.position.z = climbPosition.z;
+          } else {
+            player.position.x = OBS_X;
+            player.position.z = OBS_Z - 3.15;
+          }
+          const climbInput = (keys.current.KeyW || keys.current.ArrowUp ? 1 : 0)
+            - (keys.current.KeyS || keys.current.ArrowDown ? 1 : 0);
+          climbHeight = THREE.MathUtils.clamp(climbHeight + climbInput * dt * 6.2, 0, max + .2);
+          if (climbHeight <= 0 && climbInput < 0) {
+            climbing = false;
+            climbFort = -1;
+          }
+          if (fort && climbHeight >= fort.height - .05 && climbInput > 0) {
+            climbing = false;
+            player.position.set(fort.x, fort.ground + fort.height + .5, fort.z);
+            climbFort = -1;
+            notice("ขึ้นถึงยอดป้อมแล้ว • สามารถเดินบนลานได้", 2.5);
+          }
+        }
+        const terrainY = dungeonLevel > 0 ? DUNGEON_LEVELS[dungeonLevel - 1] : inOcean ? OCEAN_LEVEL - 11 : surfaceHeight(player.position.x, player.position.z);
+        const bridgeY = fortressBridgeHeight(player.position.x, player.position.z);
+        if (mountedDragon && dragonOnFortressBridge && !Number.isFinite(bridgeY)) {
+          dragonFlightHeight = Math.max(0, player.position.y - Math.max(terrainY + .12, OCEAN_LEVEL + .45));
+          dragonOnFortressBridge = false;
+        }
+        if (mountedDragon && !dragonOnFortressBridge && Number.isFinite(bridgeY)) {
+          const groundBase = Math.max(terrainY + .12, OCEAN_LEVEL + .45);
+          const targetY = groundBase + dragonFlightHeight;
+          if (player.position.y > bridgeY && targetY <= bridgeY) {
+            dragonOnFortressBridge = true;
+            dragonFlightHeight = 0;
+          }
+        }
+        const bridgeTop = bridgeY + .12;
+        if (mountedDragon && !dragonOnFortressBridge && Number.isFinite(bridgeY)
+          && Math.abs(player.position.y - bridgeTop) < 1.5) {
+          dragonOnFortressBridge = true;
+          dragonFlightHeight = 0;
+        }
+        const bridgeSupportsPlayer = mountedDragon
+          ? dragonOnFortressBridge && Number.isFinite(bridgeY)
+          : Number.isFinite(bridgeY) && player.position.y > terrainY + 2;
+        let platformY = bridgeSupportsPlayer ? Math.max(terrainY, bridgeY) : terrainY, stairStepY = -Infinity;
+        for (const step of specialStairSteps) {
+          if (Math.hypot(player.position.x - step.x, player.position.z - step.z) < step.r + .45 && player.position.y > step.y - .9) {
+            stairStepY = Math.max(stairStepY, step.y + .1);
+            platformY = Math.max(platformY, step.y + .1);
+          }
+        }
+        for (const f of fortresses) {
+          if (Math.hypot(player.position.x - f.x, player.position.z - f.z) < f.radius + .45 && player.position.y > f.ground + f.height - 2) {
+            platformY = Math.max(platformY, f.ground + f.height + .5);
+          }
+        }
+        if (stairStepY > terrainY && !jumpHeight && !swimming && !falling) smoothStairY = THREE.MathUtils.lerp(smoothStairY, stairStepY, 1 - Math.exp(-dt * 12));
+        else if (stairStepY <= terrainY) smoothStairY = platformY;
+        const groundY = stairStepY > terrainY ? Math.max(terrainY, smoothStairY) : platformY, maxDepth = inOcean ? 9 : Math.max(.12, SWAMP_WATER - groundY - .75);
         if (swimming) { if (wantsDive) swimDepth += dt * (fastDive ? 4.3 : 1.65); else if (jumpDown) swimDepth -= dt * 4.8; else swimDepth -= dt * .9; swimDepth = THREE.MathUtils.clamp(swimDepth, 0, maxDepth); } else swimDepth = 0;
         const underwater = swimming && swimDepth > .82, swimPose = swimming ? THREE.MathUtils.smoothstep(swimDepth, .18, 1.05) : 0; cameraSwimPose = swimPose; cameraInWater = swimming;
         if (underwater && !downed) { oxygen = Math.max(0, oxygen - dt * (fastDive ? 6.5 : 4.2)); if (oxygen <= 0) { health = Math.max(0, health - dt * 14); if (messageUntil < now) notice("ออกซิเจนหมด! กด Space เพื่อขึ้นสู่ผิวน้ำ", 1.2); if (health <= 0) { downed = true; downedTimer = 15; reviveProgress = 0; notice("คุณล้มลง • เพื่อนมีเวลา 15 วินาทีเพื่อช่วย", 4); } } } else oxygen = Math.min(100, oxygen + dt * 18);
@@ -742,43 +1570,463 @@ export default function IslandGame() {
         leftLeg.rotation.z=THREE.MathUtils.lerp(leftLeg.rotation.z,swimming?legSpread:0,.18);rightLeg.rotation.z=THREE.MathUtils.lerp(rightLeg.rotation.z,swimming?-legSpread:0,.18);
         model.rotation.x=THREE.MathUtils.lerp(model.rotation.x,climbing?Math.sin(now*.022)*.07:swimming?-1.18*swimPose:0,.12);
         const surfaceFloatY=waterLevel-1.48+Math.sin(now*.0035)*.045,diveY=waterLevel-.42-swimDepth;
-        if(!falling&&!climbing&&!swimming&&!shoreEntry&&!ridingRaft&&dungeonLevel===0&&lastSupportY-groundY>3){falling=true;fallY=player.position.y;fallVelocity=jumpVelocity;jumpHeight=0;jumpVelocity=0;notice("กำลังตกจากที่สูง!",1.5);}
-        if(falling){fallVelocity-=18*dt;fallY+=fallVelocity*dt;const landingY=groundY+.12;if(fallY<=landingY){const impact=Math.abs(fallVelocity),damage=Math.min(95,Math.max(0,Math.round((impact-9)*2.15)));fallY=landingY;falling=false;fallVelocity=0;if(damage>0){health=Math.max(0,health-damage);sound(72,.3);notice(`ตกกระแทกพื้น • เสียพลังชีวิต ${damage}`,3);if(health<=0){downed=true;downedTimer=15;reviveProgress=0;}}}player.position.y=fallY;}else player.position.y=climbing?(climbFort>=0?fortresses[climbFort].ground:obsGround)+climbHeight:ridingRaft?OCEAN_LEVEL+.65:swimming?THREE.MathUtils.lerp(surfaceFloatY,diveY,swimPose):groundY+.12+jumpHeight;
-        if(shoreEntry){falling=false;jumpHeight=0;jumpVelocity=0;player.position.y=OCEAN_LEVEL-1.45;}if(dungeonLevel===0&&(!Number.isFinite(player.position.y)||player.position.y<-55)){player.position.set(0,surfaceHeight(0,90)+.12,90);velocity.set(0,0,0);falling=false;swimDepth=0;notice("ระบบพากลับสู่จุดปลอดภัย",3);}if(!falling)lastSupportY=groundY;if(ridingRaft){raft.position.set(player.position.x,OCEAN_LEVEL+.08,player.position.z);raft.rotation.y=player.rotation.y;}
+        if(!falling&&!climbing&&!swimming&&!shoreEntry&&!ridingRaft&&!mountedDragon&&dungeonLevel===0&&lastSupportY-groundY>3){falling=true;fallY=player.position.y;fallVelocity=jumpVelocity;jumpHeight=0;jumpVelocity=0;notice("กำลังตกจากที่สูง!",1.5);}
+        if(falling){fallVelocity-=18*dt;fallY+=fallVelocity*dt;const landingY=groundY+.12;if(fallY<=landingY){const impact=Math.abs(fallVelocity),damage=Math.min(95,Math.max(0,Math.round((impact-9)*2.15)));fallY=landingY;falling=false;fallVelocity=0;if(damage>0){health=Math.max(0,health-damage);sound(72,.3);notice(`ตกกระแทกพื้น • เสียพลังชีวิต ${damage}`,3);if(health<=0){downed=true;downedTimer=15;reviveProgress=0;}}}player.position.y=fallY;}else player.position.y=climbing?(climbFort>=0?fortresses[climbFort].ground:obsGround)+climbHeight:ridingRaft?OCEAN_LEVEL+.65:mountedDragon?Math.max(groundY+.12,OCEAN_LEVEL+.45)+dragonFlightHeight+jumpHeight:swimming?THREE.MathUtils.lerp(surfaceFloatY,diveY,swimPose):groundY+.12+jumpHeight;
+        if(shoreEntry&&!mountedDragon){falling=false;jumpHeight=0;jumpVelocity=0;player.position.y=OCEAN_LEVEL-1.45;}if(dungeonLevel===0&&(!Number.isFinite(player.position.y)||player.position.y<-55)){player.position.set(0,surfaceHeight(0,90)+.12,90);velocity.set(0,0,0);falling=false;swimDepth=0;notice("ระบบพากลับสู่จุดปลอดภัย",3);}if(!falling)lastSupportY=groundY;if(ridingRaft){raft.position.set(player.position.x,OCEAN_LEVEL+.08,player.position.z);raft.rotation.y=player.rotation.y;}
         survivalNodes.forEach(n=>{if(n.taken)return;n.mesh.rotation.y+=dt*.5;const dx=player.position.x-n.mesh.position.x,dz=player.position.z-n.mesh.position.z,verticalGap=Math.abs(player.position.y-n.mesh.position.y);if(Math.hypot(dx,dz)<1.65&&verticalGap<2.4){n.taken=true;n.mesh.visible=false;if(n.type==="wood")wood++;else stone++;rewardProgress(2,1);sound(n.type==="wood"?330:240);notice(n.type==="wood"?"เก็บไม้แล้ว":"เก็บหินสำหรับคราฟต์แล้ว");}});
         treasureChests.forEach(c=>{if(c.taken)return;c.mesh.rotation.y+=dt*.18;if(player.position.distanceTo(c.mesh.position)<1.7){c.taken=true;c.mesh.visible=false;treasure++;health=Math.min(100,health+20);rewardProgress(20,12,treasure>=collectionQuest.treasure?"นักล่าสมบัติ":undefined);sound(880,.35);notice(`พบหีบสมบัติ ${treasure}/${collectionQuest.treasure} • รับ 12 เหรียญ`,3);}});
         secretNodes.forEach(secret=>{if(secret.taken)return;secret.mesh.rotation.y+=dt;secret.mesh.position.y+=Math.sin(now*.004+secret.id)*.001;if(player.position.distanceTo(secret.mesh.position)<1.65){secret.taken=true;secret.mesh.visible=false;setProgress(p=>({...p,secrets:p.secrets+1}));rewardProgress(30,20,secret.id===3?"ผู้เปิดเผยความลับ":undefined);sound(980,.3);notice("ค้นพบเสียงสะท้อนลับ • รับ 20 เหรียญ",3);}});
         if(!coopRewarded&&onlineSession&&remotePlayers.size>0){const occupied=coopPads.every(pad=>player.position.distanceTo(pad.position)<2.7||[...remotePlayers.values()].some(a=>a.root.position.distanceTo(pad.position)<2.7));if(occupied){coopRewarded=true;rewardProgress(45,30,"พลังแห่งมิตรภาพ");sound(1080,.4);notice("เปิดแท่นร่วมมือสำเร็จ • รับ 30 เหรียญ",4);}}
         [[58,64],[0,TOWER_Z],[MAZE_ZONES[0].x,MAZE_ZONES[0].z],[MAZE_ZONES[2].x,MAZE_ZONES[2].z],[SECOND_X,0],[OBS_X,OBS_Z]].forEach(([x,z],i)=>{if(!discovered.has(i)&&Math.hypot(player.position.x-x,player.position.z-z)<16){discovered.add(i);discoveries=discovered.size;rewardProgress(8,3,discoveries>=collectionQuest.discoveries?"นักสำรวจแห่งเกาะ":undefined);setProgress(p=>({...p,bestDiscoveries:Math.max(p.bestDiscoveries,discoveries)}));sound(660,.18);notice(`ค้นพบสถานที่ใหม่ ${discoveries}/${collectionQuest.discoveries}`,2.5);}});
-        animals.forEach((a,i)=>{const speed=.35+(i%3)*.12,gait=Math.sin(now*.012+i*1.7);a.rotation.y+=Math.sin(now*.0003+i)*dt*.35;a.position.x+=Math.cos(a.rotation.y)*dt*speed;a.position.z-=Math.sin(a.rotation.y)*dt*speed;const cx=i>=6?SECOND_X:0;if(Math.hypot(a.position.x-cx,a.position.z)>105){a.rotation.y+=Math.PI;}a.position.y=surfaceHeight(a.position.x,a.position.z)+Math.abs(gait)*.025;a.rotation.z=THREE.MathUtils.lerp(a.rotation.z,Math.sin(a.rotation.y)*.045,.08);const legs=a.userData.legs as THREE.Mesh[]|undefined;legs?.forEach((leg,index)=>{const diagonal=index%2===0?1:-1;leg.rotation.z=THREE.MathUtils.lerp(leg.rotation.z,diagonal*gait*.42,.22);});const body=a.userData.body as THREE.Mesh|undefined;if(body)body.rotation.y=Math.sin(now*.012+i*1.7)*.025;});fish.forEach((f,i)=>{f.position.x+=Math.sin(i)*dt*.65;f.position.z+=Math.cos(now*.0004+i)*dt*.5;f.rotation.y=now*.0004+i;});
-        throwableRocks.forEach(rock=>{if(!rock.velocity)return;const mesh=activateRock(rock);rock.velocity.y-=15*dt;mesh.position.addScaledVector(rock.velocity,dt);mesh.rotation.x+=dt*rock.velocity.length()*.45;mesh.rotation.z+=dt*3;const onSecondIsland=Math.hypot(mesh.position.x-SECOND_X,mesh.position.z-SECOND_Z)<SECOND_RADIUS,ground=onSecondIsland?secondSurfaceHeight(mesh.position.x,mesh.position.z):surfaceHeight(mesh.position.x,mesh.position.z),floor=ground+rock.radius*.72;if(mesh.position.y<=floor){mesh.position.y=floor;if(Math.abs(rock.velocity.y)>2.2){rock.velocity.y=Math.abs(rock.velocity.y)*.34;rock.velocity.x*=.62;rock.velocity.z*=.62;sound(120,.05);}else{rock.velocity=null;rock.restPosition.copy(mesh.position);}}if(rock.velocity&&enemy&&mesh.position.distanceTo(enemy.position)<1.45){const push=rock.velocity.clone().setY(0).normalize();enemy.position.addScaledVector(push,2.8);rock.velocity.multiplyScalar(-.25);rock.velocity.y=2.2;sound(90,.16);notice("หินกระแทกเงามืดจนชะงัก!");}if(rock.velocity)for(const zombie of zombies){if(zombie.root.visible&&mesh.position.distanceTo(zombie.root.position)<1.25){const push=rock.velocity.clone().setY(0).normalize();zombie.root.position.addScaledVector(push,3.5);zombie.stunnedUntil=now+3000;rock.velocity.multiplyScalar(-.22);rock.velocity.y=2;sound(105,.14);notice("ซอมบี้ล้มลง 3 วินาที!");break;}}});
+        animals.forEach((a,i)=>{if(a.userData.dead)return;const speed=.35+(i%3)*.12,gait=Math.sin(now*.012+i*1.7);a.rotation.y+=Math.sin(now*.0003+i)*dt*.35;a.position.x+=Math.cos(a.rotation.y)*dt*speed;a.position.z-=Math.sin(a.rotation.y)*dt*speed;const cx=i>=6?SECOND_X:0;if(Math.hypot(a.position.x-cx,a.position.z)>105){a.rotation.y+=Math.PI;}a.position.y=surfaceHeight(a.position.x,a.position.z)+Math.abs(gait)*.025;a.rotation.z=THREE.MathUtils.lerp(a.rotation.z,Math.sin(a.rotation.y)*.045,.08);const legs=a.userData.legs as THREE.Mesh[]|undefined;legs?.forEach((leg,index)=>{const diagonal=index%2===0?1:-1;leg.rotation.z=THREE.MathUtils.lerp(leg.rotation.z,diagonal*gait*.42,.22);});const body=a.userData.body as THREE.Mesh|undefined;if(body)body.rotation.y=Math.sin(now*.012+i*1.7)*.025;});fish.forEach((f,i)=>{if(f.userData.dead)return;f.position.x+=Math.sin(i)*dt*.65;f.position.z+=Math.cos(now*.0004+i)*dt*.5;f.rotation.y=now*.0004+i;});
+        throwableRocks.forEach(rock=>{
+          if(!rock.velocity)return;
+          const mesh=activateRock(rock);
+          rock.velocity.y-=15*dt;
+          mesh.position.addScaledVector(rock.velocity,dt);
+          mesh.rotation.x+=dt*rock.velocity.length()*.45;
+          mesh.rotation.z+=dt*3;
+          for (const controller of walkingDragonControllers) {
+            if (rock.hitDragon) break;
+            if (controller.defeated) continue;
+            walkingDragonHitCenter.copy(controller.root.position);
+            walkingDragonHitCenter.y += 3;
+            const dragonHitDistance = Math.hypot(
+              mesh.position.x - walkingDragonHitCenter.x,
+              mesh.position.z - walkingDragonHitCenter.z,
+            );
+            if (dungeonLevel === 0 && dragonHitDistance < 4.2
+              && Math.abs(mesh.position.y - walkingDragonHitCenter.y) < 4) {
+              controller.health = Math.max(0, controller.health - 1);
+              controller.defeated = controller.health === 0;
+              controller.aggro = !controller.defeated;
+              controller.fireAt = now + 800;
+              if (controller.defeated) {
+                controller.root.rotation.z = -0.14;
+                controller.root.rotation.x = 0.06;
+                rewardProgress(50, 30, "ผู้พิชิตมังกร");
+              }
+              rock.hitDragon = true;
+              rock.velocity.x *= .35;
+              rock.velocity.z *= .35;
+              rock.velocity.y = Math.min(rock.velocity.y, -2);
+              setDragonHud({
+                health: controller.health,
+                maxHealth: controller.maxHealth,
+                defeated: controller.defeated,
+              });
+              dragonHudVisibleUntil = now + 3500;
+              sound(105, .18);
+              notice(controller.defeated
+                ? "มังกรพ่ายแพ้แล้ว! เข้าใกล้แล้วกด T เพื่อขี่"
+                : `หินกระแทกมังกร! พลังชีวิต ${controller.health}/${controller.maxHealth} • มันกำลังไล่ตามคุณ!`, 3);
+              break;
+            }
+          }
+          const onSecondIsland=Math.hypot(mesh.position.x-SECOND_X,mesh.position.z-SECOND_Z)<SECOND_RADIUS;
+          const ground=onSecondIsland?secondSurfaceHeight(mesh.position.x,mesh.position.z):surfaceHeight(mesh.position.x,mesh.position.z);
+          const floor=ground+rock.radius*.72;
+          if(rock.velocity&&mesh.position.y<=floor){
+            mesh.position.y=floor;
+            if(Math.abs(rock.velocity.y)>2.2){
+              rock.velocity.y=Math.abs(rock.velocity.y)*.34;
+              rock.velocity.x*=.62;
+              rock.velocity.z*=.62;
+              sound(120,.05);
+            }else{
+              rock.velocity=null;
+              rock.restPosition.copy(mesh.position);
+            }
+          }
+          if(rock.velocity&&enemy&&mesh.position.distanceTo(enemy.position)<1.45){
+            const push=rock.velocity.clone().setY(0).normalize();
+            enemy.position.addScaledVector(push,2.8);
+            rock.velocity.multiplyScalar(-.25);
+            rock.velocity.y=2.2;
+            sound(90,.16);
+            notice("หินกระแทกเงามืดจนชะงัก!");
+          }
+          if(rock.velocity)for(const zombie of zombies){
+            if(zombie.root.visible&&mesh.position.distanceTo(zombie.root.position)<1.25){
+              const push=rock.velocity.clone().setY(0).normalize();
+              zombie.root.position.addScaledVector(push,3.5);
+              const stunDuration=zombie.size==="small"
+                ? 4000+Math.random()*1000
+                : zombie.size==="big"||zombie.size==="fat"
+                  ? 2000+Math.random()*1000
+                  : 3000;
+              zombie.stunnedUntil=now+stunDuration;
+              rock.velocity.multiplyScalar(-.22);
+              rock.velocity.y=2;
+              sound(105,.14);
+              notice(zombie.size==="small"
+                ? "ซอมบี้ตัวเล็กล้มลง 4–5 วินาที!"
+                : zombie.size==="big"||zombie.size==="fat"
+                  ? "ซอมบี้ตัวใหญ่ชะงัก 2–3 วินาที!"
+                  : "ซอมบี้ล้มลง 3 วินาที!");
+              break;
+            }
+          }
+        });
         pickups.forEach(p=>{if(p.taken)return;p.mesh.rotation.y+=dt*1.4;p.mesh.position.y=p.baseY+Math.sin(now*.003+p.mesh.position.x)*.18;if(player.position.distanceTo(p.mesh.position)<1.65){p.taken=true;p.mesh.visible=false;if(onlineSession)void onlinePost({action:"collect",pickupId:p.id,type:p.type});else if(p.type==="scrap")scrap++;else cells++;sound(p.type==="cell"?620:440);notice(p.type==="cell"?"พบเซลล์พลังงาน":"เก็บเศษโลหะ");}});
         const nearTower=player.position.distanceTo(tower.position)<5;
-        const npcAuthority=!onlineSession||[onlineSession.playerId,...remotePlayers.keys()].sort()[0]===onlineSession.playerId,dragonPhase=gameTime*Math.PI*2,dragonAngle=dragonPhase*.82,dragonX=SECOND_X*.5+Math.cos(dragonAngle)*315,dragonZ=Math.sin(dragonAngle)*175,overSecond=Math.hypot(dragonX-SECOND_X,dragonZ)<SECOND_RADIUS,overMain=Math.hypot(dragonX,dragonZ)<ISLAND_RADIUS,dragonGround=overSecond?secondSurfaceHeight(dragonX,dragonZ):overMain?surfaceHeight(dragonX,dragonZ):OCEAN_LEVEL;dragon.visible=dungeonLevel===0;dragon.position.x=dragonX;dragon.position.z=dragonZ;dragon.position.y=dragonGround+34+Math.sin(dragonAngle*2.5)*10;dragon.rotation.y=Math.atan2(-315*Math.sin(dragonAngle),175*Math.cos(dragonAngle));dragonLeftWing.rotation.z=Math.sin(now*.009)*.32;dragonRightWing.rotation.z=-Math.sin(now*.009)*.32;
-        animateDragon(dragon,now,0,1);dragonVariants.forEach(({root,phase,speed})=>{const variantAngle=gameTime*Math.PI*2*speed+phase,variantX=SECOND_X*.5+Math.cos(variantAngle)*315,variantZ=Math.sin(variantAngle)*175,variantOverSecond=Math.hypot(variantX-SECOND_X,variantZ)<SECOND_RADIUS,variantOverMain=Math.hypot(variantX,variantZ)<ISLAND_RADIUS,variantGround=variantOverSecond?secondSurfaceHeight(variantX,variantZ):variantOverMain?surfaceHeight(variantX,variantZ):OCEAN_LEVEL;root.visible=dungeonLevel===0;root.position.set(variantX,variantGround+34+Math.sin(variantAngle*2.5)*10,variantZ);root.rotation.y=Math.atan2(-315*Math.sin(variantAngle),175*Math.cos(variantAngle));const wingMotion=Math.sin(now*.009*speed)*.32;root.children.filter(child=>child.type==="Group").forEach((wing,index)=>{wing.rotation.z=index? -wingMotion:wingMotion;});animateDragon(root,now,phase,speed);});
+        const npcAuthority=!onlineSession||[onlineSession.playerId,...remotePlayers.keys()].sort()[0]===onlineSession.playerId,dragonPhase=gameTime*Math.PI*2,dragonAngle=dragonPhase*.82,dragonX=SECOND_X*.5+Math.cos(dragonAngle)*315,dragonZ=Math.sin(dragonAngle)*175,overSecond=Math.hypot(dragonX-SECOND_X,dragonZ)<SECOND_RADIUS,overMain=Math.hypot(dragonX,dragonZ)<ISLAND_RADIUS,dragonGround=overSecond?secondSurfaceHeight(dragonX,dragonZ):overMain?surfaceHeight(dragonX,dragonZ):OCEAN_LEVEL;        dragon.visible=dungeonLevel===0&&!dragon.userData.dead;dragon.position.x=dragonX;dragon.position.z=dragonZ;dragon.position.y=dragonGround+34+Math.sin(dragonAngle*2.5)*10;dragon.rotation.y=Math.atan2(-315*Math.sin(dragonAngle),175*Math.cos(dragonAngle));dragonLeftWing.rotation.z=Math.sin(now*.009)*.32;dragonRightWing.rotation.z=-Math.sin(now*.009)*.32;
+        animateDragon(dragon,now,0,1);dragonVariants.forEach(({root,phase,speed})=>{const variantAngle=gameTime*Math.PI*2*speed+phase,variantX=SECOND_X*.5+Math.cos(variantAngle)*315,variantZ=Math.sin(variantAngle)*175,variantOverSecond=Math.hypot(variantX-SECOND_X,variantZ)<SECOND_RADIUS,variantOverMain=Math.hypot(variantX,variantZ)<ISLAND_RADIUS,variantGround=variantOverSecond?secondSurfaceHeight(variantX,variantZ):variantOverMain?surfaceHeight(variantX,variantZ):OCEAN_LEVEL;root.visible=dungeonLevel===0&&!root.userData.dead;root.position.set(variantX,variantGround+34+Math.sin(variantAngle*2.5)*10,variantZ);root.rotation.y=Math.atan2(-315*Math.sin(variantAngle),175*Math.cos(variantAngle));const wingMotion=Math.sin(now*.009*speed)*.32;root.children.filter(child=>child.type==="Group").forEach((wing,index)=>{wing.rotation.z=index? -wingMotion:wingMotion;});animateDragon(root,now,phase,speed);});
+        walkingDragonControllers.forEach((controller, index) => {
+          const root = controller.root;
+          if (controller.defeated) {
+            root.visible = dungeonLevel === 0;
+            if (mountedDragon === controller) {
+              root.position.x = player.position.x;
+              root.position.z = player.position.z;
+              root.rotation.y = player.rotation.y + Math.PI;
+              if (jumpHeight <= 0.025) {
+                const riddenSpeed = velocity.length();
+                controller.gaitBlend = THREE.MathUtils.damp(
+                  controller.gaitBlend,
+                  riddenSpeed > 0.5 ? 1 : 0,
+                  riddenSpeed > 0.5 ? 3 : 2,
+                  dt,
+                );
+                if (riddenSpeed > 0.5) {
+                  controller.gaitPhase += riddenSpeed * dt * (Math.PI * 2 / 4.5);
+                }
+              }
+            } else if (root.visible && controller.landingY === null) {
+              const waypoint = controller.route[controller.waypointIndex];
+              walkingDragonMove.set(waypoint.x - root.position.x, waypoint.z - root.position.z);
+              let targetDistance = walkingDragonMove.length();
+              if (targetDistance < 0.45) {
+                controller.waypointIndex = (controller.waypointIndex + 1) % controller.route.length;
+                const nextWaypoint = controller.route[controller.waypointIndex];
+                walkingDragonMove.set(nextWaypoint.x - root.position.x, nextWaypoint.z - root.position.z);
+                targetDistance = walkingDragonMove.length();
+              }
+              let moved = false;
+              if (targetDistance > 0.001) {
+                walkingDragonMove.normalize();
+                const stepLength = Math.min(targetDistance, dt * 1.8 * controller.speed);
+                const stepCount = Math.max(1, Math.ceil(stepLength / 0.5));
+                let blocked = false;
+                for (let step = 1; step <= stepCount && !blocked; step++) {
+                  const fraction = step / stepCount;
+                  walkingDragonTestPosition.set(
+                    root.position.x + walkingDragonMove.x * stepLength * fraction,
+                    root.position.z + walkingDragonMove.y * stepLength * fraction,
+                  );
+                  for (const obstacle of colliders) {
+                    const clearance = obstacle.r + walkingDragonRadius;
+                    if ((walkingDragonTestPosition.x - obstacle.x) ** 2
+                      + (walkingDragonTestPosition.y - obstacle.z) ** 2 < clearance ** 2) {
+                      blocked = true;
+                      break;
+                    }
+                  }
+                }
+                if (!blocked) {
+                  root.position.x += walkingDragonMove.x * stepLength;
+                  root.position.z += walkingDragonMove.y * stepLength;
+                  root.rotation.y = lerpAngle(root.rotation.y, Math.atan2(walkingDragonMove.x, walkingDragonMove.y), Math.min(1, dt * 2));
+                  moved = true;
+                }
+              }
+              controller.gaitBlend = THREE.MathUtils.damp(controller.gaitBlend, moved ? 1 : 0, moved ? 3 : 2, dt);
+              if (moved) controller.gaitPhase += dt * 1.8 * controller.speed * (Math.PI * 2 / 4.5);
+            } else {
+              controller.gaitBlend = THREE.MathUtils.damp(controller.gaitBlend, 0, 2, dt);
+            }
+            const gait = Math.sin(controller.gaitPhase) * controller.gaitBlend;
+            const flying = mountedDragon === controller && dragonFlightHeight > 0.1;
+            const movingInFlight = flying && velocity.length() > 0.5;
+            const wingRhythm = Math.sin(now * 0.012 + index);
+            const hoverLegSwing = Math.sin(now * 0.0025);
+            controller.frontLegs.forEach((leg, legIndex) => {
+              leg.rotation.x = flying
+                ? movingInFlight ? -0.55 : hoverLegSwing * 0.16 * (legIndex ? -1 : 1)
+                : mountedDragon === controller && jumpHeight > 0.025
+                  ? -0.55
+                  : Math.sin(controller.gaitPhase + (legIndex ? Math.PI : 0)) * 0.38 * controller.gaitBlend;
+            });
+            controller.hindLegs.forEach((leg, legIndex) => {
+              leg.rotation.x = flying
+                ? movingInFlight ? 0.7 : hoverLegSwing * 0.2 * (legIndex ? -1 : 1)
+                : mountedDragon === controller && jumpHeight > 0.025
+                  ? 0.7
+                  : Math.sin(controller.gaitPhase + (legIndex ? 0 : Math.PI)) * 0.48 * controller.gaitBlend;
+            });
+            controller.tail.forEach((segment, tailIndex) => {
+              segment.rotation.y = Math.sin(now * 0.0025 - tailIndex * 0.35) * (0.08 + tailIndex * 0.035);
+            });
+            controller.wings.forEach((wing, wingIndex) => {
+              wing.rotation.z = (wingIndex ? -1 : 1) * (flying
+                ? 0.14 + wingRhythm * 0.3
+                : 0.04 + Math.sin(now * 0.002 + index) * 0.015);
+            });
+            controller.jaw.rotation.x = 0.08 + Math.max(0, Math.sin(now * 0.003 + index)) * 0.12;
+            root.rotation.z = flying ? 0 : -gait * 0.025;
+            root.rotation.x = flying ? 0 : gait * 0.012;
+            const bob = flying
+              ? (1 - wingRhythm) * 0.12
+              : Math.abs(Math.sin(controller.gaitPhase) * controller.gaitBlend) * 0.045;
+            if (mountedDragon === controller) {
+              root.position.y = player.position.y - 0.12 + bob;
+            } else {
+              const onSecondIsland = Math.hypot(root.position.x - SECOND_X, root.position.z) < SECOND_RADIUS;
+              root.position.y = Math.max(OCEAN_LEVEL + 0.45, onSecondIsland
+                ? secondSurfaceHeight(root.position.x, root.position.z)
+                : surfaceHeight(root.position.x, root.position.z)) + bob;
+            }
+            return;
+          }
+          const playerDragonDistance = Math.hypot(
+            player.position.x - root.position.x,
+            player.position.z - root.position.z,
+          );
+          if (dungeonLevel > 0 || (controller.aggro && playerDragonDistance > 55)) {
+            if (controller.aggro) notice("逃出มังกรพ้นระยะแล้ว • มังกรกลับไปเดินเล่น", 2);
+            controller.aggro = false;
+          }
+          const isAggro = controller.aggro;
+          const waypoint = controller.route[controller.waypointIndex];
+          walkingDragonMove.set(
+            (isAggro ? player.position.x : waypoint.x) - root.position.x,
+            (isAggro ? player.position.z : waypoint.z) - root.position.z,
+          );
+          let targetDistance = walkingDragonMove.length();
+          if (!isAggro && targetDistance < 0.45) {
+            controller.waypointIndex = (controller.waypointIndex + 1) % controller.route.length;
+            const nextWaypoint = controller.route[controller.waypointIndex];
+            walkingDragonMove.set(nextWaypoint.x - root.position.x, nextWaypoint.z - root.position.z);
+            targetDistance = walkingDragonMove.length();
+          }
+          let stepLength = 0;
+          let moved = false;
+          root.visible = dungeonLevel === 0;
+          if (root.visible && targetDistance > 0.001) {
+            walkingDragonMove.normalize();
+            stepLength = Math.min(targetDistance, dt * (isAggro ? 4 : 1.8 * controller.speed));
+            const stepCount = Math.max(1, Math.ceil(stepLength / 0.5));
+            let blocked = false;
+            for (let step = 1; isAggro && step <= stepCount && !blocked; step++) {
+              const fraction = step / stepCount;
+              walkingDragonTestPosition.set(
+                root.position.x + walkingDragonMove.x * stepLength * fraction,
+                root.position.z + walkingDragonMove.y * stepLength * fraction,
+              );
+              for (const obstacle of colliders) {
+                const clearance = obstacle.r + walkingDragonRadius;
+                if ((walkingDragonTestPosition.x - obstacle.x) ** 2
+                  + (walkingDragonTestPosition.y - obstacle.z) ** 2 < clearance ** 2) {
+                  blocked = true;
+                  break;
+                }
+              }
+            }
+            if (!blocked) {
+              root.position.x += walkingDragonMove.x * stepLength;
+              root.position.z += walkingDragonMove.y * stepLength;
+              moved = true;
+              root.rotation.y = lerpAngle(
+                root.rotation.y,
+                Math.atan2(walkingDragonMove.x, walkingDragonMove.y),
+                Math.min(1, dt * 2),
+              );
+            }
+          }
+          controller.gaitBlend = THREE.MathUtils.damp(controller.gaitBlend, moved ? 1 : 0, moved ? 3 : 2, dt);
+          if (moved) controller.gaitPhase += stepLength * (Math.PI * 2 / 4.5);
+          const wildFlightPhase = (now / 1000 + controller.flightOffset) % 60;
+          const wildFlying = !isAggro && wildFlightPhase < 12;
+          const wildFlightLift = wildFlying ? Math.sin(wildFlightPhase / 12 * Math.PI) * 10 : 0;
+          const gait = Math.sin(controller.gaitPhase) * controller.gaitBlend;
+          const flightAnimation = (mountedDragon === controller && dragonFlightHeight > 0.1)
+            || wildFlying
+            || controller.landingY !== null;
+          const movingInFlight = flightAnimation && (mountedDragon === controller ? velocity.length() : stepLength) > 0.5;
+          const wingRhythm = Math.sin(now * 0.012 + index);
+          const hoverLegSwing = Math.sin(now * 0.0025);
+          const onSecondIsland = Math.hypot(root.position.x - SECOND_X, root.position.z) < SECOND_RADIUS;
+          if (controller.landingY !== null) {
+            root.position.y = THREE.MathUtils.damp(root.position.y, controller.landingY, 1.1, dt);
+            if (Math.abs(root.position.y - controller.landingY) < 0.15) {
+              root.position.y = controller.landingY;
+              controller.landingY = null;
+            }
+          } else {
+            root.position.y = (onSecondIsland
+              ? secondSurfaceHeight(root.position.x, root.position.z)
+              : surfaceHeight(root.position.x, root.position.z)) + wildFlightLift + Math.abs(gait) * 0.045;
+          }
+          root.rotation.z = flightAnimation ? 0 : -gait * 0.025;
+          root.rotation.x = flightAnimation ? 0 : gait * 0.012;
+          controller.frontLegs.forEach((leg, legIndex) => {
+            leg.rotation.x = flightAnimation
+              ? movingInFlight ? -0.55 : hoverLegSwing * 0.16 * (legIndex ? -1 : 1)
+              : Math.sin(controller.gaitPhase + (legIndex ? Math.PI : 0)) * 0.24 * controller.gaitBlend;
+          });
+          controller.hindLegs.forEach((leg, legIndex) => {
+            leg.rotation.x = flightAnimation
+              ? movingInFlight ? 0.7 : hoverLegSwing * 0.2 * (legIndex ? -1 : 1)
+              : Math.sin(controller.gaitPhase + (legIndex ? 0 : Math.PI)) * 0.34 * controller.gaitBlend;
+          });
+          controller.tail.forEach((segment, tailIndex) => {
+            segment.rotation.y = Math.sin(now * 0.0025 - tailIndex * 0.35) * (0.08 + tailIndex * 0.035);
+          });
+          controller.jaw.rotation.x = 0.08 + Math.max(0, Math.sin(now * 0.003 + index)) * 0.16;
+          controller.wings.forEach((wing, wingIndex) => {
+            wing.rotation.z = (wingIndex ? -1 : 1) * (flightAnimation
+              ? 0.14 + wingRhythm * 0.3
+              : 0.08 + Math.sin(now * 0.002 + index) * 0.025);
+          });
+          if (isAggro && playerDragonDistance < 28 && now >= controller.fireAt && !downed) {
+            const fireball = walkingDragonFireballs.find(projectile => !projectile.active) ?? createWalkingDragonFireball();
+            fireball.root.position.set(0, 5.35, 3.3);
+            root.localToWorld(fireball.root.position);
+            walkingDragonFireTarget.copy(player.position);
+            walkingDragonFireTarget.y += 1.15;
+            fireball.velocity.copy(walkingDragonFireTarget)
+              .sub(fireball.root.position)
+              .normalize()
+              .multiplyScalar(15);
+            fireball.age = 0;
+            fireball.owner = "hostile";
+            fireball.active = true;
+            fireball.root.visible = true;
+            fireball.root.quaternion.setFromUnitVectors(
+              new THREE.Vector3(0, 0, 1),
+              fireball.velocity.clone().normalize(),
+            );
+            controller.fireAt = now + 1800;
+            sound(170, 0.18);
+          }
+        });
+        for (const fireball of walkingDragonFireballs) {
+          if (!fireball.active) continue;
+          fireball.age += dt;
+          walkingDragonFireballPrevious.copy(fireball.root.position);
+          fireball.root.position.addScaledVector(fireball.velocity, dt);
+          fireball.root.rotation.z += dt * 4;
+          fireball.root.scale.setScalar(0.85 + Math.sin(now * 0.025) * 0.12);
+          const travelDistance = walkingDragonFireballPrevious.distanceTo(fireball.root.position);
+          const collisionSteps = Math.max(1, Math.ceil(travelDistance / .25));
+          let hitMazeWall = false;
+          let hitLivingThing = false;
+          for (let step = 0; step <= collisionSteps && !hitMazeWall && !hitLivingThing; step++) {
+            const fraction = step / collisionSteps;
+            walkingDragonFireTarget.lerpVectors(walkingDragonFireballPrevious, fireball.root.position, fraction);
+            const { x: sampleX, y: sampleY, z: sampleZ } = walkingDragonFireTarget;
+            for (const wall of mazeWallColliders) {
+              if (sampleY < wall.minY - .9 || sampleY > wall.maxY + .9) continue;
+              const wallX = wall.x2 - wall.x1, wallZ = wall.z2 - wall.z1;
+              const wallLengthSquared = wallX * wallX + wallZ * wallZ;
+              const wallFraction = THREE.MathUtils.clamp(
+                ((sampleX - wall.x1) * wallX + (sampleZ - wall.z1) * wallZ) / wallLengthSquared,
+                0,
+                1,
+              );
+              const dx = sampleX - (wall.x1 + wallX * wallFraction);
+              const dz = sampleZ - (wall.z1 + wallZ * wallFraction);
+              if (dx * dx + dz * dz < (wall.radius + .9) ** 2) {
+                hitMazeWall = true;
+                break;
+              }
+            }
+            if (!hitMazeWall && fireball.owner === "ridden") {
+              hitLivingThing = damageLivingTargetAt(walkingDragonFireTarget, now);
+            }
+          }
+          if (hitMazeWall || hitLivingThing) {
+            fireball.active = false;
+            fireball.root.visible = false;
+          } else if (fireball.owner === "hostile" && fireball.root.position.distanceTo(player.position) < 1.65
+            && Math.abs(fireball.root.position.y - player.position.y) < 2.4) {
+            fireball.active = false;
+            fireball.root.visible = false;
+            if (!downed) {
+              const fireDamage = runUpgrades.fireArmor ? 6 : 12;
+              health = Math.max(0, health - fireDamage);
+              sound(95, 0.22);
+              notice(`ถูกมังกรพ่นไฟใส่! เสียพลังชีวิต ${fireDamage}`, 2);
+              if (health <= 0) {
+                downed = true;
+                downedTimer = 15;
+                reviveProgress = 0;
+                notice("คุณล้มลง • เพื่อนมีเวลา 15 วินาทีเพื่อช่วย", 4);
+              }
+            }
+          }
+          const outsideWorld = fireball.root.position.x < WORLD_MIN_X
+            || fireball.root.position.x > WORLD_MAX_X
+            || Math.abs(fireball.root.position.z) > WORLD_Z_LIMIT
+            || fireball.root.position.y < OCEAN_LEVEL - 12
+            || fireball.root.position.y > 500;
+          if (fireball.active && (outsideWorld || (fireball.owner === "hostile" && fireball.age > 3))) {
+            fireball.active = false;
+            fireball.root.visible = false;
+          }
+        }
         zombies.forEach((z,i)=>{
-          z.root.visible=z.floor>0?dungeonLevel===z.floor:night&&dungeonLevel===0;if(!z.root.visible)return;
+          z.root.visible=!z.dead&&(z.floor>0?dungeonLevel===z.floor:night&&dungeonLevel===0);if(!z.root.visible)return;
           const stunned=now<z.stunnedUntil,verticalGap=Math.abs(player.position.y-z.root.position.y),toPlayer=zombieDirection.subVectors(player.position,z.root.position);toPlayer.y=0;
           const distance=toPlayer.length(),sameIsland=(z.root.position.x<260)===(player.position.x<260),canReach=verticalGap<2.4;
-          const oldX=z.root.position.x,oldZ=z.root.position.z,eventBoost=nightEvent&&z.floor===0?1.55:1;if(npcAuthority&&!stunned&&sameIsland&&canReach&&distance<78){const targetAngle=Math.atan2(-toPlayer.x,-toPlayer.z);z.root.rotation.y=lerpAngle(z.root.rotation.y,targetAngle,Math.min(1,dt*4.5));const forward=wanderDirection.set(-Math.sin(z.root.rotation.y),0,-Math.cos(z.root.rotation.y));z.root.position.addScaledVector(forward,dt*(1.05+(i%4)*.12)*eventBoost);}else if(npcAuthority&&!stunned){z.root.rotation.y+=Math.sin(now*.0005+z.phase)*dt*.35;const forward=wanderDirection.set(-Math.sin(z.root.rotation.y),0,-Math.cos(z.root.rotation.y));z.root.position.addScaledVector(forward,dt*.22);}if(npcAuthority){const zombieWalls=z.floor>0?dungeonColliders:colliders;for(const c of zombieWalls){if("floor" in c&&c.floor!==z.floor)continue;const dx=z.root.position.x-c.x,dz=z.root.position.z-c.z,min=c.r+.46;if(Math.abs(dx)>min||Math.abs(dz)>min)continue;if(Math.hypot(dx,dz)<min){z.root.position.x=oldX;z.root.position.z=oldZ;z.root.rotation.y+=Math.PI*.62;break;}}}
+          const oldX=z.root.position.x,oldZ=z.root.position.z,eventBoost=nightEvent&&z.floor===0?1.55:1;
+          const zombieSpeed=z.size==="big"?.72:z.size==="fat"?.82:z.size==="small"?1.22:1;
+          if(npcAuthority&&!stunned&&sameIsland&&canReach&&distance<78){
+            const targetAngle=Math.atan2(-toPlayer.x,-toPlayer.z);
+            z.root.rotation.y=lerpAngle(z.root.rotation.y,targetAngle,Math.min(1,dt*4.5));
+            const forward=wanderDirection.set(-Math.sin(z.root.rotation.y),0,-Math.cos(z.root.rotation.y));
+            z.root.position.addScaledVector(forward,dt*(1.05+(i%4)*.12)*eventBoost*zombieSpeed);
+          }else if(npcAuthority&&!stunned){
+            z.root.rotation.y+=Math.sin(now*.0005+z.phase)*dt*.35;
+            const forward=wanderDirection.set(-Math.sin(z.root.rotation.y),0,-Math.cos(z.root.rotation.y));
+            z.root.position.addScaledVector(forward,dt*.22*zombieSpeed);
+          }
+          if(npcAuthority){
+            const zombieWalls=z.floor>0?dungeonColliders:colliders;
+            for(const c of zombieWalls){
+              if("floor" in c&&c.floor!==z.floor)continue;
+              const dx=z.root.position.x-c.x,dz=z.root.position.z-c.z,min=c.r+.46*z.root.scale.x;
+              if(Math.abs(dx)>min||Math.abs(dz)>min)continue;
+              if(Math.hypot(dx,dz)<min){z.root.position.x=oldX;z.root.position.z=oldZ;z.root.rotation.y+=Math.PI*.62;break;}
+            }
+          }
           if(npcAuthority&&canReach&&distance<1.35){const targetAngle=Math.atan2(-toPlayer.x,-toPlayer.z);z.root.rotation.y=lerpAngle(z.root.rotation.y,targetAngle,Math.min(1,dt*7));}
-          const zombieOnSecond=z.floor===0&&Math.hypot(z.root.position.x-SECOND_X,z.root.position.z-SECOND_Z)<SECOND_RADIUS;const zombieGround=z.floor>0?DUNGEON_LEVELS[z.floor-1]:zombieOnSecond?secondSurfaceHeight(z.root.position.x,z.root.position.z):surfaceHeight(z.root.position.x,z.root.position.z);z.root.position.y=zombieGround+(stunned?.42:0);z.root.rotation.x=THREE.MathUtils.lerp(z.root.rotation.x,stunned?.18:0,Math.min(1,dt*12));z.root.rotation.z=THREE.MathUtils.lerp(z.root.rotation.z,stunned?-1.42:0,Math.min(1,dt*10));const biting=!stunned&&canReach&&distance<1.5,walk=stunned||biting?0:Math.sin(now*.008+z.phase)*.28;z.leftArm.rotation.x=biting?-.9:-.62-walk;z.rightArm.rotation.x=biting?-.9:-.62+walk;z.leftLeg.rotation.x=-walk;z.rightLeg.rotation.x=walk;
-          if(!downed&&biting&&now-z.lastHit>850){z.lastHit=now;const biteDamage=i>=20?15:10;health=Math.max(0,health-biteDamage);sound(82,.18);notice(i>=20?"บอสดันเจี้ยนโจมตี!":"ซอมบี้กัดคุณ! ใช้หินขว้างหรือวิ่งหนี",1.5);if(health<=0){health=0;downed=true;downedTimer=15;reviveProgress=0;}}
+          const zombieOnSecond=z.floor===0&&Math.hypot(z.root.position.x-SECOND_X,z.root.position.z-SECOND_Z)<SECOND_RADIUS;
+          const zombieGround=z.floor>0?DUNGEON_LEVELS[z.floor-1]:zombieOnSecond?secondSurfaceHeight(z.root.position.x,z.root.position.z):surfaceHeight(z.root.position.x,z.root.position.z);
+          z.root.position.y=zombieGround+(stunned?(z.size==="small"?.08:.42):0);
+          z.root.rotation.x=THREE.MathUtils.lerp(z.root.rotation.x,stunned?.18:0,Math.min(1,dt*12));
+          z.root.rotation.z=THREE.MathUtils.lerp(z.root.rotation.z,stunned?(z.size==="small"?-1.55:-1.42):0,Math.min(1,dt*10));
+          const biting=!stunned&&canReach&&distance<1.5,walk=stunned||biting?0:Math.sin(now*.008+z.phase)*.28;
+          z.leftArm.rotation.x=biting?-.9:-.62-walk;z.rightArm.rotation.x=biting?-.9:-.62+walk;z.leftLeg.rotation.x=-walk;z.rightLeg.rotation.x=walk;
+          const dungeonBoss=z.floor>0&&i>=surfaceZombieCount+6;
+          if(!downed&&biting&&now-z.lastHit>850){
+            z.lastHit=now;const biteDamage=dungeonBoss?15:10;health=Math.max(0,health-biteDamage);sound(82,.18);
+            notice(dungeonBoss?"บอสดันเจี้ยนโจมตี!":"ซอมบี้กัดคุณ! ใช้หินขว้างหรือวิ่งหนี",1.5);
+            if(health<=0){health=0;downed=true;downedTimer=15;reviveProgress=0;}
+          }
         });
-        enemy.visible=night&&dungeonLevel===0;if(night&&dungeonLevel===0){const ed=enemyDirection.subVectors(player.position,enemy.position);ed.y=0;if(ed.length()<62)enemy.position.addScaledVector(ed.normalize(),dt*(1.7+(1-daylight)*1.8));else{enemy.position.x+=Math.sin(now*.0007)*dt;enemy.position.z+=Math.cos(now*.0009)*dt;}if(Math.hypot(enemy.position.x,enemy.position.z)>PLAY_RADIUS){const a=Math.atan2(enemy.position.z,enemy.position.x);enemy.position.x=Math.cos(a)*PLAY_RADIUS;enemy.position.z=Math.sin(a)*PLAY_RADIUS;}enemy.position.y=surfaceHeight(enemy.position.x,enemy.position.z)+.2;enemy.lookAt(player.position.x,player.position.y+1,player.position.z);
+        enemy.visible=night&&dungeonLevel===0&&!enemy.userData.dead;if(enemy.visible){const ed=enemyDirection.subVectors(player.position,enemy.position);ed.y=0;if(ed.length()<62)enemy.position.addScaledVector(ed.normalize(),dt*(1.7+(1-daylight)*1.8));else{enemy.position.x+=Math.sin(now*.0007)*dt;enemy.position.z+=Math.cos(now*.0009)*dt;}if(Math.hypot(enemy.position.x,enemy.position.z)>PLAY_RADIUS){const a=Math.atan2(enemy.position.z,enemy.position.x);enemy.position.x=Math.cos(a)*PLAY_RADIUS;enemy.position.z=Math.sin(a)*PLAY_RADIUS;}enemy.position.y=surfaceHeight(enemy.position.x,enemy.position.z)+.2;enemy.lookAt(player.position.x,player.position.y+1,player.position.z);
           if(!downed&&enemy.position.distanceTo(player.position)<1.7&&now-damagedAt>850){health-=14;damagedAt=now;sound(110,.3);notice("เงามืดโจมตีคุณ! วิ่งหนี!",1.5);if(health<=0){health=0;downed=true;downedTimer=15;reviveProgress=0;notice("คุณล้มลง • เพื่อนมีเวลา 15 วินาทีเพื่อช่วย",4);}}
-        } else { enemyDirection.subVectors(enemy.position,player.position).normalize();enemy.position.addScaledVector(enemyDirection,dt*2); }
+        } else if(!enemy.userData.dead) { enemyDirection.subVectors(enemy.position,player.position).normalize();enemy.position.addScaledVector(enemyDirection,dt*2); }
         if(downed){downedTimer-=dt;const helper=[...remotePlayers.values()].some(a=>a.root.position.distanceTo(player.position)<3);reviveProgress=helper?reviveProgress+dt:Math.max(0,reviveProgress-dt*.5);model.rotation.z=THREE.MathUtils.lerp(model.rotation.z,-1.45,.18);model.rotation.x=THREE.MathUtils.lerp(model.rotation.x,0,.18);model.position.y=THREE.MathUtils.lerp(model.position.y,.18,.16);if(reviveProgress>=2.5){downed=false;health=45;oxygen=60;model.rotation.set(0,0,0);model.position.y=0;sound(760,.3);notice("เพื่อนช่วยคุณกลับขึ้นมาแล้ว!",3);}else if(downedTimer<=0){gameOver=true;setEnd("lost");}}else{model.rotation.z=THREE.MathUtils.lerp(model.rotation.z,0,.15);model.position.y=THREE.MathUtils.lerp(model.position.y,0,.18);}
         if(!downed&&!airborne&&!swimming){const bodyRhythm=moving?Math.abs(Math.sin(now*(keys.current.ShiftLeft?.014:.01)))*(keys.current.ShiftLeft?.07:.045):0;model.position.y=THREE.MathUtils.lerp(model.position.y,bodyRhythm,.25);model.rotation.z=THREE.MathUtils.lerp(model.rotation.z,moving?Math.sin(now*(keys.current.ShiftLeft?.014:.01))*.025:0,.2);}
+        if(mountedDragon&&!downed){model.position.y=4.1+Math.abs(Math.sin(now*.008))*.06;leftLeg.rotation.x=THREE.MathUtils.lerp(leftLeg.rotation.x,-1.05,.18);rightLeg.rotation.x=THREE.MathUtils.lerp(rightLeg.rotation.x,-1.05,.18);leftArm.rotation.x=THREE.MathUtils.lerp(leftArm.rotation.x,.15,.18);rightArm.rotation.x=THREE.MathUtils.lerp(rightArm.rotation.x,.15,.18);model.rotation.z=0;}
         if(onlineSession&&now-lastSync>115&&syncInFlight===0){lastSync=now;syncInFlight=1;const anim=[leftArm.rotation.x,rightArm.rotation.x,leftLeg.rotation.x,rightLeg.rotation.x,model.rotation.x],isAuthority=[onlineSession.playerId,...remotePlayers.keys()].sort()[0]===onlineSession.playerId,sendNpcs=isAuthority&&now-lastNpcSync>450,full=now-lastFullSync>1000;if(sendNpcs)lastNpcSync=now;if(full)lastFullSync=now;const npcs=sendNpcs?{z:zombies.map(z=>[z.root.position.x,z.root.position.y,z.root.position.z,z.root.rotation.y,Math.max(0,z.stunnedUntil-performance.now())]),d:[dragon.position.x,dragon.position.y,dragon.position.z,dragon.rotation.y]} as NpcSnapshot:undefined;void onlinePost({action:"sync",x:player.position.x,y:player.position.y,z:player.position.z,rotation:player.rotation.y,pose:localPose,anim,appearance:{...appearanceRef.current,...(npcs?{_npcs:npcs}:{})},rock:onlineRock(),full}).finally(()=>{syncInFlight=0;});}
-        if(now-lastHud>160){lastHud=now;const quest=!craftedRaft?wood>=4&&stone>=3?"กด Q เพื่อคราฟต์แพ":"รวบรวมไม้ 4 และหิน 3 เพื่อสร้างแพ":treasure<3?"ค้นหาหีบสมบัติที่ซ่อนอยู่ทั้ง 3 ใบ":discoveries<6?"ค้นพบสถานที่สำคัญบนแผนที่ 6 แห่ง":"ซ่อมหอส่งสัญญาณและเอาชีวิตรอด";const questProgress=!craftedRaft?Math.min(100,(wood/4+stone/3)*50):treasure<3?treasure/3*100:discoveries<6?discoveries/6*100:Math.min(100,(scrap/6+cells/3)*50);let nearFort=false;for(const f of fortresses)if(Math.hypot(player.position.x-f.x,player.position.z-f.ladderZ)<2.25)nearFort=true;const defaultMessage=climbing?(climbFort>=0?"เกาะบันไดป้อม • W ขึ้น • S ลง • L ปล่อย":"กำลังปีนหอสังเกตการณ์ • W ขึ้น • S ลง"):nearFort?"กด L เพื่อเกาะบันไดป้อม":ladderNear?"กด W เพื่อปีนบันไดหอสังเกตการณ์":ridingRaft?"กำลังล่องแพ • กด R เพื่อลง":underwater?(fastDive?"ว่ายเร็วใต้น้ำ • กด Space เพื่อขึ้น":"กำลังดำน้ำ • กด Shift ร่วมกับ C เพื่อว่ายเร็ว"):swimming?(keys.current.ShiftLeft?"กำลังว่ายเร็วที่ผิวน้ำ":"กำลังลอยน้ำ • กด Shift เพื่อว่ายเร็ว • C เพื่อดำน้ำ"):nearTower?(scrap>=6&&cells>=3?"กด E เพื่อซ่อมหอส่งสัญญาณ":"หอส่งสัญญาณต้องการ 6 เศษโลหะ + 3 เซลล์"):"สำรวจสองเกาะ ป้อมปราการ และหอสังเกตการณ์";setHud(h=>({ ...h,health,oxygen:Math.round(oxygen),inWater:swimming&&!ridingRaft,scrap,cells,wood,stone,treasure,discoveries,mapX:player.position.x,mapZ:player.position.z,mapRotation:-THREE.MathUtils.radToDeg(player.rotation.y),quest,questProgress,time:gameTime,nearTower,message:messageUntil<now?defaultMessage:h.message}));}
+        if(now-lastHud>160){lastHud=now;const quest=!craftedRaft?wood>=4&&stone>=3?"กด Q เพื่อคราฟต์แพ":"รวบรวมไม้ 4 และหิน 3 เพื่อสร้างแพ":treasure<3?"ค้นหาหีบสมบัติที่ซ่อนอยู่ทั้ง 3 ใบ":discoveries<6?"ค้นพบสถานที่สำคัญบนแผนที่ 6 แห่ง":"ซ่อมหอส่งสัญญาณและเอาชีวิตรอด";const questProgress=!craftedRaft?Math.min(100,(wood/4+stone/3)*50):treasure<3?treasure/3*100:discoveries<6?discoveries/6*100:Math.min(100,(scrap/6+cells/3)*50);let nearFort=false;for(const f of fortresses)if(Math.hypot(player.position.x-f.x,player.position.z-f.ladderZ)<2.25)nearFort=true;const defaultMessage=climbing?(climbFort>=0?"เกาะบันไดป้อม • W ขึ้น • S ลง • L ปล่อย":"กำลังปีนหอสังเกตการณ์ • W ขึ้น • S ลง"):nearFort?"กด L เพื่อเกาะบันไดป้อม":ladderNear?"กด W เพื่อปีนบันไดหอสังเกตการณ์":mountedDragon?"ขี่มังกรอยู่ • ใช้ WASD บังคับ • กด T เพื่อลง":ridingRaft?"กำลังล่องแพ • กด R เพื่อลง":underwater?(fastDive?"ว่ายเร็วใต้น้ำ • กด Space เพื่อขึ้น":"กำลังดำน้ำ • กด Shift ร่วมกับ C เพื่อว่ายเร็ว"):swimming?(keys.current.ShiftLeft?"กำลังว่ายเร็วที่ผิวน้ำ":"กำลังลอยน้ำ • กด Shift เพื่อว่ายเร็ว • C เพื่อดำน้ำ"):nearTower?(scrap>=6&&cells>=3?"กด E เพื่อซ่อมหอส่งสัญญาณ":"หอส่งสัญญาณต้องการ 6 เศษโลหะ + 3 เซลล์"):"สำรวจสองเกาะ ป้อมปราการ และหอสังเกตการณ์";setHud(h=>({ ...h,health,oxygen:Math.round(oxygen),inWater:swimming&&!ridingRaft,scrap,cells,wood,stone,treasure,discoveries,mapX:player.position.x,mapZ:player.position.z,mapRotation:-THREE.MathUtils.radToDeg(player.rotation.y),quest,questProgress,time:gameTime,nearTower,message:messageUntil<now?defaultMessage:h.message}))}
+        const rideableDragon = walkingDragonControllers
+          .filter(controller => controller.defeated)
+          .map(controller => ({ controller, distance: Math.hypot(player.position.x - controller.root.position.x, player.position.z - controller.root.position.z) }))
+          .filter(({ distance }) => distance < 12)
+          .sort((a, b) => a.distance - b.distance)[0]?.controller;
+        setDragonRideState(mountedDragon ? "riding" : rideableDragon ? "near" : "hidden");
+        if (now >= dragonHudVisibleUntil) setDragonHud(null);
         if(now-lastHud<20){const dynamicQuest=collectionQuestStatus(collectionQuest,craftedRaft,wood,stone,treasure,discoveries,scrap,cells);setHud(h=>({...h,...dynamicQuest}));}
       }
       for (const avatar of remotePlayers.values()) { const predictionSeconds = Math.min(.18, Math.max(0, (now - avatar.sampleAt) / 1000)); avatar.renderTarget.copy(avatar.target).addScaledVector(avatar.velocity, predictionSeconds); const gap = avatar.root.position.distanceTo(avatar.renderTarget); if (gap > 12) avatar.root.position.copy(avatar.renderTarget); else avatar.root.position.lerp(avatar.renderTarget, 1 - Math.exp(-dt * 11)); let delta = avatar.rotation - avatar.root.rotation.y; delta = Math.atan2(Math.sin(delta), Math.cos(delta)); avatar.root.rotation.y += delta * (1 - Math.exp(-dt * 10)); const t = now * .008, movingRemote = avatar.pose === "walk" || avatar.pose === "run", swimmingRemote = avatar.pose.startsWith("swim") || avatar.pose === "underwater", a = avatar.anim; const strideRemote = movingRemote ? Math.sin(t * (avatar.pose === "run" ? 1.7 : 1)) * .65 : 0; avatar.leftLeg.rotation.x = THREE.MathUtils.lerp(avatar.leftLeg.rotation.x, avatar.pose === "downed" ? -1.05 : a ? a[2] : swimmingRemote ? .35 + Math.sin(t) * .35 : -strideRemote, .32); avatar.rightLeg.rotation.x = THREE.MathUtils.lerp(avatar.rightLeg.rotation.x, avatar.pose === "downed" ? -1.05 : a ? a[3] : swimmingRemote ? .35 - Math.sin(t) * .35 : strideRemote, .32); avatar.leftArm.rotation.x = THREE.MathUtils.lerp(avatar.leftArm.rotation.x, a ? a[0] : swimmingRemote ? .8 + Math.sin(t) * .5 : strideRemote, .32); avatar.rightArm.rotation.x = THREE.MathUtils.lerp(avatar.rightArm.rotation.x, a ? a[1] : swimmingRemote ? .8 - Math.sin(t) * .5 : -strideRemote, .32); avatar.model.rotation.x = THREE.MathUtils.lerp(avatar.model.rotation.x, avatar.pose === "downed" ? .32 : a ? a[4] : avatar.pose === "underwater" ? -1.18 : 0, .28); avatar.model.rotation.z = THREE.MathUtils.lerp(avatar.model.rotation.z, 0, .18); avatar.model.position.y = THREE.MathUtils.lerp(avatar.model.position.y, avatar.pose === "downed" ? -.42 : 0, .18); if (avatar.rockMesh && avatar.rockState?.state === "thrown") { const r = avatar.rockState, v = r.velocity; avatar.rockMesh.position.set(r.position[0] + v[0] * predictionSeconds, r.position[1] + v[1] * predictionSeconds - .5 * 15 * predictionSeconds * predictionSeconds, r.position[2] + v[2] * predictionSeconds); avatar.rockMesh.rotation.x += dt * 4; avatar.rockMesh.rotation.z += dt * 3; } }
       for (const avatar of remotePlayers.values()) if (avatar.pose === "downed") { avatar.model.rotation.x = THREE.MathUtils.lerp(avatar.model.rotation.x, 0, .35); avatar.model.rotation.z = THREE.MathUtils.lerp(avatar.model.rotation.z, -1.45, .35); avatar.model.position.y = THREE.MathUtils.lerp(avatar.model.position.y, .18, .25); }
       for (const [id, audio] of voiceAudios) { const avatar = remotePlayers.get(id); if (!avatar) { audio.volume = 0; continue; } const distance = player.position.distanceTo(avatar.root.position), radius = 42; audio.volume = THREE.MathUtils.clamp(1 - distance / radius, 0, 1); }
-      const target = cameraTarget.copy(player.position); target.y += 1.25 - cameraSwimPose * .65;
-      const orbitDistance = 8.5, horizontal = Math.cos(pitch) * orbitDistance;
+      const target = cameraTarget.copy(player.position); target.y += mountedDragon ? 3.2 : 1.25 - cameraSwimPose * .65;
+      const orbitDistance = mountedDragon ? 13 : 8.5, horizontal = Math.cos(pitch) * orbitDistance;
       desiredCamera.copy(target).add(moveDir.set(Math.sin(yaw) * horizontal, Math.sin(pitch) * orbitDistance, Math.cos(yaw) * horizontal));
       // On land the camera stays above terrain. In water and in the dungeon it
       // can orbit freely, including looking upward and underneath the bridge.
@@ -786,11 +2034,11 @@ export default function IslandGame() {
       else if (cameraInWater) desiredCamera.y = Math.max(desiredCamera.y, OCEAN_LEVEL - 10.5);
       if (dungeonLevel > 0) { const floorY = DUNGEON_LEVELS[dungeonLevel - 1]; desiredCamera.x = THREE.MathUtils.clamp(desiredCamera.x, DUNGEON_X - 38.2, DUNGEON_X + 38.2); desiredCamera.z = THREE.MathUtils.clamp(desiredCamera.z, DUNGEON_Z - 30.2, DUNGEON_Z + 30.2); desiredCamera.y = THREE.MathUtils.clamp(desiredCamera.y, floorY + .55, floorY + 8.1); }
       camera.position.lerp(desiredCamera, .12); camera.lookAt(target);
-      water.material instanceof THREE.MeshStandardMaterial && (water.material.opacity = .86 + Math.sin(now * .001) * .03);
-      renderer.render(scene, camera); (host as any)._raf = raf;
+      if (water.material instanceof THREE.MeshStandardMaterial) water.material.opacity = .86 + Math.sin(now * .001) * .03;
+      renderer.render(scene, camera);
     }; tick();
     const resize = () => { camera.aspect = host.clientWidth / host.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(host.clientWidth, host.clientHeight) }; addEventListener("resize", resize);
-    return () => { cancelAnimationFrame((host as any)._raf); removeEventListener("resize", resize); removeEventListener("keydown", down); removeEventListener("keyup", up); removeEventListener("mousemove", moveMouse); removeEventListener("mousedown", mouseDown); removeEventListener("mouseup", mouseUp); renderer.domElement.removeEventListener("contextmenu", preventMenu); localVoiceStream?.getTracks().forEach(t => t.stop()); voicePeers.forEach(p => p.close()); voiceAudios.forEach(a => a.pause()); voiceToggle.current = () => { }; chatSend.current = () => { }; rockAction.current = () => { }; lookMaterials.current = null; bodyShape.current = null; renderer.dispose(); host.innerHTML = ""; };
+    return () => { cancelAnimationFrame(raf); removeEventListener("resize", resize); removeEventListener("keydown", down); removeEventListener("keyup", up); removeEventListener("mousemove", moveMouse); removeEventListener("mousedown", mouseDown); removeEventListener("mouseup", mouseUp); document.removeEventListener("pointerlockchange", pointerLockChanged); renderer.domElement.removeEventListener("touchstart", startAimTouch); renderer.domElement.removeEventListener("touchmove", moveAimTouch); renderer.domElement.removeEventListener("touchend", endAimTouch); renderer.domElement.removeEventListener("touchcancel", endAimTouch); renderer.domElement.removeEventListener("contextmenu", preventMenu); localVoiceStream?.getTracks().forEach(t => t.stop()); voicePeers.forEach(p => p.close()); voiceAudios.forEach(a => a.pause()); voiceToggle.current = () => { }; chatSend.current = () => { }; rockAction.current = () => { }; upgradeAction.current = () => {}; mountDragonAction.current = () => {}; lookMaterials.current = null; bodyShape.current = null; renderer.dispose(); host.innerHTML = ""; };
   }, [started, onlineSession?.playerId]);
 
   const press = (code: string, on: boolean) => { keys.current[code] = on; };
@@ -803,28 +2051,47 @@ export default function IslandGame() {
   const swatches = (key: ColorKey, label: string) => { const bonus = key === "shirt" ? [0x151515, 0xffd23f, 0x53e4c1, 0xd83b8c].slice(0, progress.unlocks) : []; return <div className="look-row"><span>{t(label)}{key === "shirt" && progress.unlocks > 0 ? ` • ${t("ปลดล็อก")} ${progress.unlocks}` : ""}</span><div>{[...LOOK_OPTIONS[key], ...bonus].map(color => <button key={color} className={appearance[key] === color ? "selected" : ""} style={{ backgroundColor: `#${color.toString(16).padStart(6, "0")}` }} onClick={() => setAppearance(a => ({ ...a, [key]: color }))} aria-label={`${t(label)} ${color.toString(16)}`} />)}</div></div> };
   const shapeSlider = (key: "height" | "build" | "muscle", label: string, left: string, right: string) => <label className="shape-slider"><span><b>{t(label)}</b><small>{Math.round(appearance[key] * 100)}%</small></span><div><em>{t(left)}</em><input type="range" min="0" max="100" value={Math.round(appearance[key] * 100)} onChange={e => setAppearance(a => ({ ...a, [key]: Number(e.target.value) / 100 }))} /><em>{t(right)}</em></div></label>;
   const hours = Math.floor((hud.time * 24 + 5) % 24), mins = Math.floor((((hud.time * 24 + 5) % 24) % 1) * 60);
+  const upgradeDetails: Record<UpgradeId, { title: string; description: string }> = language === "ja" ? {
+    sling: { title: "強化スリング", description: "投石の速度が40%アップ。ドラゴンに当てやすくなります。" },
+    fireArmor: { title: "耐熱アーマー", description: "ドラゴンの炎によるダメージを12から6に軽減。" },
+    sail: { title: "改良セイル", description: "いかだに乗っている間、移動速度が35%アップ。" },
+  } : {
+    sling: { title: "หนังสติ๊กเสริมแรง", description: "เพิ่มความเร็วหินที่ขว้าง 40% เล็งโดนมังกรง่ายขึ้น" },
+    fireArmor: { title: "เกราะทนไฟ", description: "ลดความเสียหายจากไฟมังกรจาก 12 เหลือ 6" },
+    sail: { title: "ใบเรือปรับปรุง", description: "เพิ่มความเร็วขณะอยู่บนแพ 35%" },
+  };
+  const upgradeCostLabel = (upgrade: UpgradeId) => {
+    const cost = UPGRADE_COSTS[upgrade];
+    return language === "ja"
+      ? [cost.wood && `木材 ${cost.wood}`, cost.stone && `石 ${cost.stone}`, cost.scrap && `金属 ${cost.scrap}`, cost.cells && `セル ${cost.cells}`].filter(Boolean).join(" • ")
+      : [cost.wood && `ไม้ ${cost.wood}`, cost.stone && `หิน ${cost.stone}`, cost.scrap && `เศษโลหะ ${cost.scrap}`, cost.cells && `เซลล์ ${cost.cells}`].filter(Boolean).join(" • ");
+  };
   return <main className="game-shell">
     <div ref={mount} className="viewport" aria-label={t("เกมสามมิติ Echo Island")} />
     <div className="grain" />
-    <header className="topbar"><div className="brand"><span className="brand-mark">E</span><div><strong>ECHO ISLAND</strong><small>{t("เกาะที่จดจำคุณ")}</small></div></div><div className="top-actions">{started && onlineSession && <><button className={`icon-btn voice-btn ${voiceEnabled ? "active" : ""}`} onClick={() => voiceToggle.current()} aria-label={voiceEnabled ? t("ปิดไมโครโฟน") : t("เปิดเสียงตามระยะ")}>{voiceEnabled ? "🎙" : "🔇"}</button><button className={`icon-btn ${chatOpen ? "active" : ""}`} onClick={openChat} aria-label={t("เปิดแชต")}>💬</button></>}<button className="icon-btn" onClick={openWardrobe} aria-label={t("ปรับแต่งตัวละคร")}>♙</button><button className="icon-btn" onClick={() => setShowHelp(true)} aria-label={t("วิธีเล่น")}>?</button></div></header>
+    <header className="topbar"><div className="brand"><span className="brand-mark">E</span><div><strong>ECHO ISLAND</strong><small>{t("เกาะที่จดจำคุณ")}</small></div></div><div className="top-actions">{started && onlineSession && <><button className={`icon-btn voice-btn ${voiceEnabled ? "active" : ""}`} onClick={() => voiceToggle.current()} aria-label={voiceEnabled ? t("ปิดไมโครโฟน") : t("เปิดเสียงตามระยะ")}>{voiceEnabled ? "🎙" : "🔇"}</button><button className={`icon-btn ${chatOpen ? "active" : ""}`} onClick={openChat} aria-label={t("เปิดแชต")}>💬</button></>}{started&&<button className={`icon-btn ${showUpgrades ? "active" : ""}`} onClick={()=>{document.exitPointerLock?.();setShowUpgrades(true);}} aria-label={language==="ja"?"装備を作成":"อัปเกรดอุปกรณ์"}>⚒</button>}<button className="icon-btn" onClick={openWardrobe} aria-label={t("ปรับแต่งตัวละคร")}>♙</button><button className="icon-btn" onClick={() => setShowHelp(true)} aria-label={t("วิธีเล่น")}>?</button></div></header>
     {voiceError && <div className="voice-error" onClick={() => setVoiceError("")}>{voiceError}</div>}
     {started && onlineSession && chatOpen && <section className="room-chat"><header><b>{t("แชตห้อง")} {onlineSession.code}</b><button onClick={() => setChatOpen(false)}>×</button></header><div className="chat-log">{chatMessages.length === 0 && <small>{t("ยังไม่มีข้อความ เริ่มคุยกับเพื่อนได้เลย")}</small>}{chatMessages.map(m => <p key={m.id} className={m.playerId === onlineSession.playerId ? "mine" : ""}><strong>{m.name}</strong><span>{m.message}</span></p>)}</div><form onSubmit={e => { e.preventDefault(); submitChat(); }}><input autoFocus value={chatInput} maxLength={180} placeholder={t("พิมพ์แผนหรือข้อความถึงเพื่อน…")} onChange={e => setChatInput(e.target.value)} /><button type="submit">{t("ส่ง")}</button></form></section>}
     {started && !end && <>
       <section className="mission"><span>{onlineSession ? <>{t("ห้อง")} {onlineSession.code} • {hud.onlineCount}/4 {t("คน")} <button className="copy-code" onClick={() => navigator.clipboard?.writeText(onlineSession.code)}>{t("คัดลอกรหัส")}</button></> : t("ภารกิจต่อเนื่อง")}</span><strong>{t(hud.quest)}</strong><div className="progress-row"><i style={{ width: `${hud.questProgress}%` }} /></div></section>
+      {dragonHud&&<section className={`dragon-status ${dragonHud.defeated?"defeated":""}`}><b>{language==="ja"?"ウォーキングドラゴン":"歩くドラゴン"}</b><span>{dragonHud.defeated?(language==="ja"?"撃破":"พ่ายแพ้"):`${language==="ja"?"HP":"พลังชีวิต"} ${dragonHud.health}/${dragonHud.maxHealth}`}</span><i><em style={{width:`${dragonHud.health/dragonHud.maxHealth*100}%`}}/></i></section>}
       <section className="legacy"><b>LV.{progress.level}</b><span>✦ {progress.coins} {language==="ja"?"コイン":"เหรียญ"}</span><small>XP {progress.xp % 100}/100</small><em>{t(randomQuest)}</em><i>{language==="ja"?`${progress.achievements.length} 実績 • 秘密 ${progress.secrets}/4 • 解放 ${progress.unlocks}`:`${progress.achievements.length} ความสำเร็จ • ความลับ ${progress.secrets}/4 • ปลดล็อก ${progress.unlocks}`}</i></section>
       <section className="stats"><div className="vitals"><div className="health"><b>{t("พลังชีวิต")}</b><span>{Math.round(hud.health)}</span><i><em style={{ width: `${hud.health}%` }} /></i></div>{hud.inWater && <div className="oxygen"><b>{t("ออกซิเจน")}</b><span>{hud.oxygen}</span><i><em style={{ width: `${hud.oxygen}%` }} /></i></div>}</div><div className="time"><small>{t(hours >= 18 || hours < 6 ? "กลางคืน" : "กลางวัน")}</small><strong>{String(hours).padStart(2, "0")}:{String(mins).padStart(2, "0")}</strong></div></section>
       <section className="inventory"><div><span className="resource scrap">◆</span><p><b>{hud.scrap}</b><small>{t("โลหะ")}</small></p></div><div><span className="resource cell">◉</span><p><b>{hud.cells}</b><small>{t("เซลล์")}</small></p></div><div><span className="resource">▰</span><p><b>{hud.wood}</b><small>{t("ไม้")}</small></p></div><div><span className="resource">⬟</span><p><b>{hud.stone}</b><small>{t("หิน")}</small></p></div></section>
       <section className="minimap"><b>{t("แผนที่สำรวจ")}</b><div>{(() => { const marker = minimapPosition(hud.mapX, hud.mapZ); return <><i className="island one" /><i className="island two" /><i className="bridge-dot" /><i className="player-dot" aria-label={t("ทิศทางการเคลื่อนที่")} style={{ left: `${marker.x / 190 * 100}%`, top: `${marker.z / 76 * 100}%`, transform: `translate(-50%, -50%) rotate(${hud.mapRotation}deg)` }} /></>; })()}<span>{language==="ja"?`発見 ${hud.discoveries}/6 • 宝箱 ${hud.treasure}/3`:`ค้นพบ ${hud.discoveries}/6 • หีบ ${hud.treasure}/3`}</span></div></section>
       <div className="message">{t(hud.message)}</div>
       {hud.nearTower && <button className="interact" onClick={() => repair.current()}><kbd>E</kbd><span>{t("ซ่อมหอส่งสัญญาณ")}</span></button>}
+      {dragonRideState!=="hidden"&&<button className="dragon-ride" onClick={()=>mountDragonAction.current()}><kbd>T</kbd><span>{dragonRideState==="riding"?(language==="ja"?"ドラゴンから降りる":"ลงจากมังกร"):(language==="ja"?"ドラゴンに乗る":"ขี่มังกร")}</span></button>}
+      {dragonRideState==="riding"&&aimingDragon&&<div className="dragon-aim-reticle" aria-label={language==="ja"?"照準":"เป้าเล็ง"}><i /></div>}
       {carryingRock && <div className={`aim-reticle ${aimingRock ? "active" : ""}`}><i /><span>{t(aimingRock ? "ปล่อยเมาส์ขวาเพื่อยกเลิก • คลิกซ้ายเพื่อโยนแรง" : "กดเมาส์ขวาค้างเพื่อเล็ง")}</span></div>}
-      <div className="desktop-hint"><kbd>WASD</kbd> {t("เคลื่อนที่")} <span>•</span> <kbd>G</kbd> {t("ประตูดันเจี้ยน")} <span>•</span> <kbd>V</kbd> {t("สร้างกำแพงฐาน")} <span>•</span> <kbd>L</kbd> {t("บันไดป้อม")} <span>•</span> <kbd>B</kbd> {t("ใช้กระเป๋า")}</div>
-      <div className="mobile-controls"><div className="dpad"><button onPointerDown={() => press("KeyW", true)} onPointerUp={() => press("KeyW", false)}>▲</button><button onPointerDown={() => press("KeyA", true)} onPointerUp={() => press("KeyA", false)}>◀</button><button onPointerDown={() => press("KeyS", true)} onPointerUp={() => press("KeyS", false)}>▼</button><button onPointerDown={() => press("KeyD", true)} onPointerUp={() => press("KeyD", false)}>▶</button></div><button className="jump" onPointerDown={() => press("Space", true)} onPointerUp={() => press("Space", false)}>{t(hud.inWater ? "ขึ้น" : "โดด")}</button><button className="run" onPointerDown={() => press("ShiftLeft", true)} onPointerUp={() => press("ShiftLeft", false)}>{t(hud.inWater ? "เร็ว" : "วิ่ง")}</button><button className="dive" onPointerDown={() => press("KeyC", true)} onPointerUp={() => press("KeyC", false)}>{t("ดำน้ำ")}</button><button className="rock-action" onPointerDown={() => rockAction.current()}>{t(carryingRock ? "โยน" : "ยกหิน")}</button></div>
+      <div className="desktop-hint"><kbd>WASD</kbd> {t("เคลื่อนที่")} <span>•</span> <kbd>G</kbd> {t("ประตูดันเจี้ยน")} <span>•</span> <kbd>V</kbd> {t("สร้างกำแพงฐาน")} <span>•</span> <kbd>L</kbd> {t("บันไดป้อม")} <span>•</span> <kbd>B</kbd> {t("ใช้กระเป๋า")} <span>•</span> <kbd>T</kbd> {language==="ja"?"ドラゴンに乗る/降りる":"ขี่/ลงมังกร"}{dragonRideState==="riding"&&<> <span>•</span> <kbd>↑/↓</kbd> {language==="ja"?"飛行高度":"บินขึ้น/ลง"} <span>•</span> {language==="ja"?"マウスで照準":"เล็งด้วยเมาส์"} <span>•</span> <kbd>F</kbd> {language==="ja"?"火を吐く":"พ่นไฟ"}</>}</div>
+      <div className="mobile-controls"><div className="dpad"><button onPointerDown={() => press(dragonRideState==="riding"?"ArrowUp":"KeyW", true)} onPointerUp={() => press(dragonRideState==="riding"?"ArrowUp":"KeyW", false)}>▲</button><button onPointerDown={() => press("KeyA", true)} onPointerUp={() => press("KeyA", false)}>◀</button><button onPointerDown={() => press(dragonRideState==="riding"?"ArrowDown":"KeyS", true)} onPointerUp={() => press(dragonRideState==="riding"?"ArrowDown":"KeyS", false)}>▼</button><button onPointerDown={() => press("KeyD", true)} onPointerUp={() => press("KeyD", false)}>▶</button></div><button className="jump" onPointerDown={() => press("Space", true)} onPointerUp={() => press("Space", false)}>{t(hud.inWater ? "ขึ้น" : "โดด")}</button><button className="run" onPointerDown={() => press("ShiftLeft", true)} onPointerUp={() => press("ShiftLeft", false)}>{t(hud.inWater ? "เร็ว" : "วิ่ง")}</button><button className="dive" onPointerDown={() => press("KeyC", true)} onPointerUp={() => press("KeyC", false)}>{t("ดำน้ำ")}</button><button className="rock-action" onPointerDown={() => rockAction.current()}>{dragonRideState==="riding"?(language==="ja"?"火を吐く":"พ่นไฟ"):t(carryingRock ? "โยน" : "ยกหิน")}</button></div>
     </>}
     {!started&&!onlineSetup&&<div className="overlay"><div className="hero-card"><label className="language-picker">言語 / ภาษา<select value={language} onChange={e=>setLanguage(e.target.value as Language)}><option value="th">ไทย</option><option value="ja">日本語</option></select></label><div className="eyebrow">3D SURVIVAL ADVENTURE</div><h1>{language==="ja"?"この島は":"เกาะนี้"}<br/><em>{language==="ja"?"あなたを覚えている":"จดจำคุณ"}</em></h1><p>{language==="ja"?"嵐で船が難破した。古い通信塔だけが希望だ。しかし日が沈むと、島の何かがあなたを追い始める。":"เรือของคุณอับปางกลางพายุ หอส่งสัญญาณเก่าคือความหวังเดียว — แต่เมื่อดวงอาทิตย์ลับขอบฟ้า บางสิ่งบนเกาะจะเริ่มตามล่า"}</p><div className="goal"><span>{t("ภารกิจ")}</span><b>{language==="ja"?`木材 ${previewQuest.wood} と石 ${previewQuest.stone} を集めていかだを作る`:`รวบรวมไม้ ${previewQuest.wood} และหิน ${previewQuest.stone} เพื่อสร้างแพ`}</b></div><div className="start-actions triple"><button className="secondary" onClick={openWardrobe}>{t("ปรับแต่ง")}</button><button className="secondary online" onClick={()=>setOnlineSetup(true)}>{t("เล่นออนไลน์")}</button><button className="primary" onClick={()=>setStarted(true)}>{t("เล่นคนเดียว")} <span>→</span></button></div>{savedSession&&<button className="resume-room" onClick={()=>startOnline("resume")} disabled={connecting}>{t("กลับเข้าห้อง")} {savedSession.code}</button>}<small>{t("ผู้เล่นสูงสุด 4 คน • รหัสห้องเป็นส่วนตัว")}</small></div></div>}
     {onlineSetup&&<div className="overlay"><div className="online-card"><button className="close-online" onClick={()=>setOnlineSetup(false)}>×</button><span className="eyebrow">PRIVATE CO-OP</span><h2>สำรวจเกาะกับเพื่อน</h2><p>สร้างห้องแล้วส่งรหัส 6 ตัวให้เพื่อน หรือกรอกรหัสที่ได้รับเพื่อเข้าร่วม</p><label>ชื่อผู้เล่น<input value={playerName} maxLength={18} onChange={e=>setPlayerName(e.target.value)}/></label><div className="online-actions"><button className="primary" disabled={connecting} onClick={()=>startOnline("create")}>สร้างห้องใหม่</button><div><input value={joinCode} maxLength={6} placeholder="รหัสห้อง" onChange={e=>setJoinCode(e.target.value.toUpperCase())}/><button className="secondary" disabled={connecting||joinCode.length<6} onClick={()=>startOnline("join")}>เข้าร่วม</button></div></div>{onlineError&&<div className="online-error">{onlineError}</div>}<small>{connecting?"กำลังเชื่อมต่อ…":"ผู้เล่นสูงสุด 4 คน • รหัสห้องเป็นส่วนตัว"}</small></div></div>}
+    {showUpgrades&&<div className="overlay"><section className="upgrade-card" role="dialog" aria-modal="true" aria-labelledby="upgrade-title"><button className="upgrade-close" onClick={()=>setShowUpgrades(false)} aria-label={language==="ja"?"閉じる":"ปิด"}>×</button><span className="eyebrow">{language==="ja"?"サバイバル装備":"อุปกรณ์เอาตัวรอด"}</span><h2 id="upgrade-title">{language==="ja"?"装備を強化":"คราฟต์อัปเกรด"}</h2><p>{language==="ja"?"素材を使って、この冒険中ずっと使える装備を作ろう。":"ใช้วัสดุที่เก็บมาเพื่อสร้างอุปกรณ์ ใช้ได้ตลอดการผจญภัยรอบนี้"}</p><div className="upgrade-list">{(["sling","fireArmor","sail"] as UpgradeId[]).map(upgrade=>{const cost=UPGRADE_COSTS[upgrade],owned=craftedUpgrades[upgrade],affordable=hud.wood>=cost.wood&&hud.stone>=cost.stone&&hud.scrap>=cost.scrap&&hud.cells>=cost.cells;return <article className="upgrade-item" key={upgrade}><div><b>{upgradeDetails[upgrade].title}</b><small>{upgradeDetails[upgrade].description}</small><em>{upgradeCostLabel(upgrade)}</em></div><button disabled={owned||!affordable} onClick={()=>upgradeAction.current(upgrade)}>{owned?(language==="ja"?"作成済み":"สร้างแล้ว"):(language==="ja"?"作成":"คราฟต์")}</button></article>;})}</div></section></div>}
     {end&&<div className="overlay"><div className={`end-card ${end}`}><span>{end==="won"?"SIGNAL RESTORED":"THE ISLAND REMEMBERS"}</span><h2>{end==="won"?"ส่งสัญญาณสำเร็จ":"คุณหายไปในความมืด"}</h2><p>{end==="won"?"แสงสีเขียวพุ่งผ่านหมอก เสียงตอบรับจากแผ่นดินใหญ่ดังขึ้น — คุณรอดชีวิตจาก Echo Island":"เมื่อแสงแรกมาถึง ชายหาดว่างเปล่า เหลือเพียงรอยเท้าที่วนกลับไปยังป่า"}</p><button className="primary" onClick={restart}>เล่นอีกครั้ง <span>↻</span></button></div></div>}
-    {showHelp&&<div className="overlay"><div className="help-card"><button onClick={()=>setShowHelp(false)}>×</button><span>คู่มือนักสำรวจ</span><h2>วิธีเอาชีวิตรอด</h2><ol><li><b>สำรวจเกาะ</b><small>วัตถุที่มีแสงเรืองคือทรัพยากร เดินเข้าใกล้เพื่อเก็บ ใช้ Space เพื่อกระโดดข้ามสิ่งกีดขวาง</small></li><li><b>ว่ายน้ำและดำน้ำ</b><small>กด Shift เพื่อว่ายเร็วที่ผิวน้ำ กด C เพื่อดำน้ำ และกด Shift พร้อม C เพื่อว่ายเร็วใต้น้ำ กด Space เพื่อกลับขึ้นผิวน้ำ ระวังออกซิเจนหมดเพราะอาจจมน้ำได้</small></li><li><b>ใช้ก้อนหิน</b><small>เข้าใกล้หินก้อนเล็กแล้วกด F เพื่อยก คลิกซ้ายเพื่อโยน หรือกดเมาส์ขวาค้างเพื่อเล็งก่อนโยน หินทำให้เงามืดชะงักได้</small></li><li><b>เตรียมก่อนค่ำ</b><small>เงามืดแข็งแกร่งในเวลากลางคืน วิ่งหนีและรักษาระยะห่าง</small></li><li><b>กลับไปยังหอคอย</b><small>เมื่อมีเศษโลหะ 6 ชิ้นและเซลล์ 3 ก้อน กด E ที่แผงควบคุม</small></li></ol><button className="primary" onClick={()=>setShowHelp(false)}>เข้าใจแล้ว</button></div></div>}
+    {showHelp&&<div className="overlay"><div className="help-card"><button onClick={()=>setShowHelp(false)}>×</button><span>คู่มือนักสำรวจ</span><h2>วิธีเอาชีวิตรอด</h2><ol><li><b>สำรวจเกาะ</b><small>วัตถุที่มีแสงเรืองคือทรัพยากร เดินเข้าใกล้เพื่อเก็บ ใช้ Space เพื่อกระโดดข้ามสิ่งกีดขวาง</small></li><li><b>ว่ายน้ำและดำน้ำ</b><small>กด Shift เพื่อว่ายเร็วที่ผิวน้ำ กด C เพื่อดำน้ำ และกด Shift พร้อม C เพื่อว่ายเร็วใต้น้ำ กด Space เพื่อกลับขึ้นผิวน้ำ ระวังออกซิเจนหมดเพราะอาจจมน้ำได้</small></li><li><b>ใช้ก้อนหิน</b><small>เข้าใกล้หินก้อนเล็กแล้วกด F เพื่อยก คลิกซ้ายเพื่อโยน หรือกดเมาส์ขวาค้างเพื่อเล็งก่อนโยน หินทำให้เงามืดชะงักได้</small></li><li><b>สร้างอุปกรณ์</b><small>กดปุ่ม ⚒ ด้านบนเพื่อแลกวัสดุเป็นหนังสติ๊กแรงขึ้น เกราะทนไฟ หรือใบเรือที่เร็วขึ้น</small></li><li><b>ปราบและขี่มังกร</b><small>ขว้างหินใส่มังกร 5 ครั้งเพื่อลดพลังชีวิต เมื่อมันพ่ายแพ้ เข้าใกล้แล้วกด T เพื่อขี่ ใช้ WASD บังคับและกด T อีกครั้งเพื่อลง</small></li><li><b>เตรียมก่อนค่ำ</b><small>เงามืดแข็งแกร่งในเวลากลางคืน วิ่งหนีและรักษาระยะห่าง</small></li><li><b>กลับไปยังหอคอย</b><small>เมื่อมีเศษโลหะ 6 ชิ้นและเซลล์ 3 ก้อน กด E ที่แผงควบคุม</small></li></ol><button className="primary" onClick={()=>setShowHelp(false)}>เข้าใจแล้ว</button></div></div>}
     {customizing&&<div className="overlay wardrobe-overlay"><CharacterPreview appearance={appearance} language={language}/><section className="wardrobe"><button className="close" onClick={()=>setCustomizing(false)}>×</button><div className="eyebrow">EXPLORER LOADOUT</div><h2>{t("ปรับแต่งนักสำรวจ")}</h2><p>{t("เลือกรูปลักษณ์และสรีระ การเปลี่ยนแปลงจะแสดงบนตัวละครและบันทึกโดยอัตโนมัติ")}</p><div className="character-styles"><button className={appearance.character!=="blocky"?"selected":""} onClick={()=>setAppearance(a=>({...a,character:"explorer"}))}>{language==="ja"?"探検家":"นักสำรวจ"}<small>{language==="ja"?"現在のキャラクター":"ตัวละครปัจจุบัน"}</small></button><button className={appearance.character==="blocky"?"selected":""} onClick={()=>setAppearance(a=>({...a,...BLOCKY_LOOK,skin:a.skin,shirt:a.shirt,pants:a.pants,pack:a.pack,hair:a.hair,character:"blocky"}))}>{language==="ja"?"ブロッキー・サバイバー":"ผู้รอดชีวิตทรงบล็อก"}<small>{language==="ja"?"Roblox風のブロック体型":"ตัวละครทรงบล็อกสไตล์ Roblox"}</small></button></div><div className="shape-list">{shapeSlider("height","ความสูง","เตี้ย","สูง")}{shapeSlider("build","รูปร่าง","ผอม","อ้วน")}{shapeSlider("muscle","กล้ามเนื้อ","ธรรมดา","กำยำ")}</div><div className="look-list">{swatches("skin","สีผิว")}{swatches("shirt","เสื้อเดินป่า")}{swatches("pants","กางเกง")}{swatches("pack","กระเป๋า")}{swatches("hair","สีผม")}</div><div className="wardrobe-actions"><button className="reset-look" onClick={()=>setAppearance(DEFAULT_LOOK)}>{t("คืนค่าเดิม")}</button><button className="primary" onClick={()=>setCustomizing(false)}>{t("เสร็จเรียบร้อย")} <span>✓</span></button></div></section></div>}
   </main>;
 }
@@ -832,7 +2099,7 @@ export default function IslandGame() {
 function CharacterPreview({appearance,language}:{appearance:Appearance;language:Language}){
   const mount=useRef<HTMLDivElement>(null);
   const appearanceRef=useRef(appearance);
-  appearanceRef.current=appearance;
+  useEffect(()=>{appearanceRef.current=appearance;},[appearance]);
   useEffect(()=>{
     const host=mount.current;if(!host)return;
     const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(38,1,.1,30);camera.position.set(0,1.25,-7.2);camera.lookAt(0,1.18,0);
@@ -853,6 +2120,6 @@ function CharacterPreview({appearance,language}:{appearance:Appearance;language:
     const resize=()=>{const w=host.clientWidth,h=host.clientHeight;camera.aspect=w/Math.max(h,1);camera.updateProjectionMatrix();renderer.setSize(w,h,false)};resize();const ro=new ResizeObserver(resize);ro.observe(host);
     let raf=0;const start=performance.now();const draw=()=>{const t=(performance.now()-start)/1000,look=appearanceRef.current,nextWidth=.78+look.build*.5,nextHeight=.82+look.height*.38,nextArmScale=.82+look.muscle*.55;skin.color.setHex(look.skin);shirt.color.setHex(look.shirt);pants.color.setHex(look.pants);packMat.color.setHex(look.pack);hairMat.color.setHex(look.hair);player.scale.set(nextWidth,nextHeight,nextWidth);torso.scale.set(1+look.muscle*.18,1,1+look.muscle*.18);la.scale.set(nextArmScale,1,nextArmScale);ra.scale.set(nextArmScale,1,nextArmScale);la.position.x=-(.48+look.build*.11+look.muscle*.07);ra.position.x=-la.position.x;player.rotation.y=Math.sin(t*.55)*.55;player.position.y=Math.sin(t*1.4)*.025;renderer.render(scene,camera);raf=requestAnimationFrame(draw)};draw();
     return()=>{cancelAnimationFrame(raf);ro.disconnect();renderer.dispose();host.innerHTML="";};
-  },[]);
+  },[appearance.character]);
   return <div ref={mount} className="wardrobe-preview"><div><span>{language==="ja"?"ライブプレビュー":"ตัวอย่างสด"}</span><small>{language==="ja"?"モデルが回転して正面とバックパックを確認できます":"โมเดลจะหมุนเพื่อดูด้านหน้าและกระเป๋า"}</small></div></div>;
 }
