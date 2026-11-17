@@ -21,6 +21,8 @@ type Appearance = Record<ColorKey,number>&{height:number;build:number;muscle:num
 type OnlineSession={code:string;playerId:string;token:string};
 type OnlineRock={id:number;state:"held"|"thrown"|"rest";radius:number;scale:[number,number,number];position:[number,number,number];velocity:[number,number,number]};
 type OnlinePlayer={id:string;name:string;appearance:Appearance;x:number;y:number;z:number;rotation:number;pose:string;anim:[number,number,number,number,number]|null;rock:OnlineRock|null;updatedAt:number};
+type RemoteSample={time:number;position:THREE.Vector3;rotation:number};
+const REMOTE_INTERPOLATION_DELAY_MS=150;
 type NpcSnapshot={z:Array<[number,number,number,number,number]>;d:[number,number,number,number]};
 type VoiceSignal={id:number;fromId:string;payload:{type:"offer"|"answer"|"candidate";sdp?:RTCSessionDescriptionInit;candidate?:RTCIceCandidateInit}};
 type ChatMessage={id:number;playerId:string;name:string;message:string;createdAt:number};
@@ -141,6 +143,69 @@ const COLOR_KEYS:ColorKey[]=["skin","shirt","pants","pack","hair"];
 const DEFAULT_LOOK:Appearance={skin:0xe7c4a1,shirt:0xf1a447,pants:0x263e49,pack:0x304b51,hair:0x2b211d,height:.5,build:.45,muscle:.35,character:"explorer"};
 const BLOCKY_LOOK:Appearance={...DEFAULT_LOOK,skin:0xd99b72,shirt:0x3d8bd9,pants:0x263e49,pack:0x7d4d2b,hair:0x201713,character:"blocky"};
 const LOOK_OPTIONS={skin:[0xf4d2b5,0xe7c4a1,0xc98f65,0x8b5b3e,0x5c3828],shirt:[0xf1a447,0x4fb6a2,0xd85c51,0x5479c9,0xb479c8,0xe8d26f],pants:[0x263e49,0x25315b,0x564638,0x315844,0x5b3441],pack:[0x304b51,0x79543c,0x496a3d,0x9a654b,0x3e4269],hair:[0x191512,0x543322,0xa66a36,0xd6b36d,0x6b334d]};
+type CharacterRig={model:THREE.Group;body:THREE.Mesh;leftArm:THREE.Group;rightArm:THREE.Group;rightHand:THREE.Mesh;leftLeg:THREE.Group;rightLeg:THREE.Group;materials:Record<ColorKey,THREE.MeshStandardMaterial>;setCharacter:(character:CharacterStyle)=>void};
+const buildCharacterRig=(appearance:Appearance):CharacterRig=>{
+  const look={...DEFAULT_LOOK,...appearance},blocky=look.character==="blocky",model=new THREE.Group();
+  const material=(color:number)=>new THREE.MeshStandardMaterial({color,roughness:.85,flatShading:true});
+  const shirt=material(look.shirt),skin=material(look.skin),pants=material(look.pants),packMat=material(look.pack),hairMat=material(look.hair),boot=material(0x17262b);
+  const styleUpdates:Array<(character:CharacterStyle)=>void>=[];
+  let activeCharacter:CharacterStyle=blocky?"blocky":"explorer";
+  const styleObject=(object:THREE.Object3D,character:CharacterStyle)=>{object.userData.characterStyle=character;return object;};
+  const styleGeometry=(mesh:THREE.Mesh,explorer:THREE.BufferGeometry,blockyGeometry:THREE.BufferGeometry)=>styleUpdates.push(character=>{mesh.geometry=character==="blocky"?blockyGeometry:explorer;});
+  const bodyGeometries={explorer:new THREE.CapsuleGeometry(.42,.62,5,8),blocky:new THREE.BoxGeometry(.78,.92,.46)};
+  const body=new THREE.Mesh(bodyGeometries[activeCharacter],shirt);styleGeometry(body,bodyGeometries.explorer,bodyGeometries.blocky);body.position.y=1.27;body.castShadow=true;model.add(body);
+  const pack=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.62,.74,.34,3,3,2),packMat),"explorer");pack.position.set(0,1.27,.42);pack.castShadow=true;pack.visible=!blocky;model.add(pack);
+  const blockyPack=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.62,.68,.24,2,2,1),packMat),"blocky");blockyPack.position.set(0,1.26,.34);blockyPack.castShadow=true;blockyPack.visible=blocky;model.add(blockyPack);
+  const packFlap=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.54,.2,.1,2,1,2),packMat),"explorer");packFlap.position.set(0,1.5,.62);packFlap.castShadow=true;packFlap.visible=!blocky;model.add(packFlap);
+  const harness=material(0x17262b),belt=material(0x5b3d28);
+  for(const x of [-.22,.22]){const strap=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.055,.72,.055),harness),"explorer");strap.position.set(x,1.3,-.39);strap.rotation.z=x*.16;strap.visible=!blocky;model.add(strap);}
+  const beltMesh=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.82,.14,.48,2,1,2),belt),"explorer");beltMesh.position.set(0,.88,0);beltMesh.castShadow=true;beltMesh.visible=!blocky;model.add(beltMesh);
+  for(const x of [-.4,.4]){const pouch=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.18,.22,.2,2,2,1),belt),"explorer");pouch.position.set(x,.84,-.28);pouch.castShadow=true;pouch.visible=!blocky;model.add(pouch);}
+  const bedroll=styleObject(new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,.72,8),boot),"explorer");bedroll.rotation.z=Math.PI/2;bedroll.position.set(0,.82,.55);bedroll.visible=!blocky;model.add(bedroll);
+  for(const x of [-.23,.23]){const strap=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.06,.72,.05),boot),"explorer");strap.position.set(x,1.25,.64);strap.visible=!blocky;model.add(strap);}
+  for(const x of [-.2,.2]){const strap=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.07,.62,.035),harness),"blocky");strap.position.set(x,1.28,.205);strap.rotation.z=x*.12;strap.visible=blocky;model.add(strap);}
+  const neck=new THREE.Mesh(new THREE.CylinderGeometry(.15,.17,.18,8),skin);neck.position.y=1.83;model.add(neck);
+  const headGeometries={explorer:new THREE.IcosahedronGeometry(.38,1),blocky:new THREE.BoxGeometry(.72,.72,.72)};
+  const head=new THREE.Mesh(headGeometries[activeCharacter],skin);styleGeometry(head,headGeometries.explorer,headGeometries.blocky);head.position.y=2.12;head.castShadow=true;model.add(head);
+  const faceMat=new THREE.MeshStandardMaterial({color:0x1c1b1e,roughness:.72,metalness:.08}),faceDetails=new THREE.Group();head.add(faceDetails);
+  const leftEye=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMat);leftEye.position.set(-.12,.06,-.38);faceDetails.add(leftEye);
+  const rightEye=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMat);rightEye.position.set(.12,.06,-.38);faceDetails.add(rightEye);
+  const nose=new THREE.Mesh(new THREE.ConeGeometry(.045,.16,12),faceMat);nose.rotation.x=-Math.PI/2;nose.position.set(0,-.02,-.43);faceDetails.add(nose);
+  const earGeo=new THREE.BoxGeometry(.12,.2,.12);for(const x of [-.39,.39]){const ear=styleObject(new THREE.Mesh(earGeo,skin),"blocky");ear.position.set(x,0,-.01);ear.visible=blocky;head.add(ear);}
+  const mouth=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.18,.04,.02),faceMat),"explorer");mouth.position.set(0,-.18,-.32);faceDetails.add(mouth);nose.visible=true;mouth.visible=!blocky;
+  const smile=styleObject(new THREE.Mesh(new THREE.TorusGeometry(.13,.018,6,16,Math.PI),faceMat),"blocky");smile.rotation.z=Math.PI;smile.position.set(0,-.1,-.405);faceDetails.add(smile);smile.visible=blocky;
+  const hairGeometries={explorer:new THREE.SphereGeometry(.39,8,5,0,Math.PI*2,0,Math.PI*.48),blocky:new THREE.BoxGeometry(.76,.25,.76)};
+  const hair=new THREE.Mesh(hairGeometries[activeCharacter],hairMat);styleGeometry(hair,hairGeometries.explorer,hairGeometries.blocky);hair.position.y=blocky?2.56:2.23;model.add(hair);
+  const limb=(x:number,y:number,material:THREE.Material,length:number,radius:number)=>{
+    const pivot=new THREE.Group();pivot.position.set(x,y,0);
+    const explorerParts=styleObject(new THREE.Group(),"explorer"),blockyParts=styleObject(new THREE.Group(),"blocky"),cylinder=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius*.9,length,7),material);
+    cylinder.position.y=-length/2;cylinder.castShadow=true;explorerParts.add(cylinder);
+    const upper=new THREE.Mesh(new THREE.BoxGeometry(radius*2.35,length*.52,radius*2.35),material),lower=new THREE.Mesh(new THREE.BoxGeometry(radius*2.35,length*.48,radius*2.35),skin);
+    upper.position.y=-length*.26;lower.position.y=-length*.76;upper.castShadow=lower.castShadow=true;blockyParts.add(upper,lower);
+    explorerParts.visible=!blocky;blockyParts.visible=blocky;pivot.add(explorerParts,blockyParts);model.add(pivot);return pivot;
+  };
+  const leftArm=limb(-.56,1.58,shirt,.72,.13),rightArm=limb(.56,1.58,shirt,.72,.13);
+  for(const x of [-.5,.5]){const shoulderGeometries={explorer:new THREE.SphereGeometry(.2,8,6),blocky:new THREE.BoxGeometry(.28,.28,.48)},shoulder=new THREE.Mesh(shoulderGeometries[activeCharacter],shirt);styleGeometry(shoulder,shoulderGeometries.explorer,shoulderGeometries.blocky);shoulder.position.set(x,1.58,0);shoulder.scale.set(1.05,.82,1);shoulder.castShadow=true;model.add(shoulder);}
+  const collar=styleObject(new THREE.Mesh(new THREE.TorusGeometry(.2,.055,6,12),shirt),"explorer");collar.rotation.x=Math.PI/2;collar.position.y=1.86;collar.visible=!blocky;model.add(collar);
+  const handGeometries={explorer:new THREE.SphereGeometry(.14,7,6),blocky:new THREE.BoxGeometry(.24,.24,.24)};
+  const leftHand=new THREE.Mesh(handGeometries[activeCharacter],skin);styleGeometry(leftHand,handGeometries.explorer,handGeometries.blocky);leftHand.position.y=-.75;leftArm.add(leftHand);
+  const rightHand=new THREE.Mesh(handGeometries[activeCharacter],skin);styleGeometry(rightHand,handGeometries.explorer,handGeometries.blocky);rightHand.position.y=-.75;rightArm.add(rightHand);
+  const leftLeg=limb(-.23,.82,pants,.83,.17),rightLeg=limb(.23,.82,pants,.83,.17);
+  const sole=material(0x101b20),bootGeometries={explorer:new THREE.CapsuleGeometry(.16,.24,3,6),blocky:new THREE.BoxGeometry(.34,.22,.58)};
+  const leftBoot=new THREE.Mesh(bootGeometries[activeCharacter],boot);styleGeometry(leftBoot,bootGeometries.explorer,bootGeometries.blocky);leftBoot.rotation.x=blocky?0:Math.PI/2;leftBoot.position.set(0,-.84,-.16);leftBoot.scale.set(1,1,1.12);leftBoot.castShadow=true;leftLeg.add(leftBoot);
+  const leftSole=new THREE.Mesh(new THREE.BoxGeometry(.3,.1,.5,2,1,2),sole);leftSole.position.set(0,-.98,-.16);leftSole.castShadow=true;leftLeg.add(leftSole);
+  const rightBoot=new THREE.Mesh(bootGeometries[activeCharacter],boot);styleGeometry(rightBoot,bootGeometries.explorer,bootGeometries.blocky);rightBoot.rotation.x=leftBoot.rotation.x;rightBoot.position.copy(leftBoot.position);rightBoot.scale.copy(leftBoot.scale);rightBoot.castShadow=true;
+  const rightSole=leftSole.clone();rightLeg.add(rightBoot,rightSole);
+  const setCharacter=(character:CharacterStyle)=>{
+    if(activeCharacter===character)return;
+    model.traverse(object=>{const style=object.userData.characterStyle;if(style==="explorer"||style==="blocky")object.visible=style===character;});
+    styleUpdates.forEach(update=>update(character));hair.position.y=character==="blocky"?2.56:2.23;leftBoot.rotation.x=rightBoot.rotation.x=character==="blocky"?0:Math.PI/2;activeCharacter=character;
+  };
+  const width=.78+look.build*.5,height=.82+look.height*.38,arms=.82+look.muscle*.55;
+  model.scale.set(width,height,width);body.scale.set(1+look.muscle*.18,1,1+look.muscle*.18);
+  leftArm.scale.set(arms,1,arms);rightArm.scale.set(arms,1,arms);leftArm.position.x=-(.48+look.build*.11+look.muscle*.07);rightArm.position.x=-leftArm.position.x;
+  return {model,body,leftArm,rightArm,rightHand,leftLeg,rightLeg,materials:{shirt,skin,pants,pack:packMat,hair:hairMat},setCharacter};
+};
 const SWAMP_X=-75,SWAMP_Z=95,SWAMP_RADIUS=38,SWAMP_WATER=.25,ISLAND_RADIUS=235,MAIN_BEACH_START=214,SECOND_X=470,SECOND_Z=0,SECOND_RADIUS=125,SECOND_BEACH_START=108,BRIDGE_Y=-.15,OCEAN_LEVEL=-5.2,WORLD_MIN_X=-300,WORLD_MAX_X=660,WORLD_Z_LIMIT=300;
 const MAZE_ZONES=[{x:-112,z:-104,half:29},{x:112,z:-104,half:29},{x:112,z:105,half:29}];
 const minimapPosition=(x:number,z:number)=>{
@@ -488,55 +553,11 @@ export default function IslandGame() {
     const raft = new THREE.Group(); for (let i = -2; i <= 2; i++) { const log = new THREE.Mesh(new THREE.CylinderGeometry(.28, .34, 3.8, 7), mat(0x815333)); log.rotation.x = Math.PI / 2; log.position.x = i * .58; raft.add(log); } const mast = new THREE.Mesh(new THREE.CylinderGeometry(.08, .1, 3.2, 6), mat(0x5b3c25)); mast.position.y = 1.55; raft.add(mast); const sail = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2), mat(0xe8d7ad)); sail.position.set(.95, 2, 0); sail.rotation.y = Math.PI / 2; raft.add(sail); raft.position.set(232, OCEAN_LEVEL + .15, 12); raft.visible = false; scene.add(raft);
 */
 
-    const player=new THREE.Group(),model=new THREE.Group();scene.add(player);player.add(model);player.position.set(0,surfaceHeight(0,90),90);
-    const look={...DEFAULT_LOOK,...appearanceRef.current};
-    const blocky=look.character==="blocky";
-    const shirt=mat(look.shirt), skin=mat(look.skin), pants=mat(look.pants), packMat=mat(look.pack), hairMat=mat(look.hair), boot=mat(0x17262b);
-    lookMaterials.current={shirt,skin,pants,pack:packMat,hair:hairMat};
-    const styleUpdates:Array<(character:CharacterStyle)=>void>=[];
-    let activeCharacter:CharacterStyle=blocky?"blocky":"explorer";
-    const styleObject=(object:THREE.Object3D,character:CharacterStyle)=>{object.userData.characterStyle=character;return object;};
-    const styleGeometry=(mesh:THREE.Mesh,explorer:THREE.BufferGeometry,blockyGeometry:THREE.BufferGeometry)=>styleUpdates.push(character=>{mesh.geometry=character==="blocky"?blockyGeometry:explorer;});
-    const bodyGeometries={explorer:new THREE.CapsuleGeometry(.42,.62,5,8),blocky:new THREE.BoxGeometry(.78,.92,.46)};
-    const body=new THREE.Mesh(bodyGeometries[activeCharacter],shirt);styleGeometry(body,bodyGeometries.explorer,bodyGeometries.blocky);body.position.y=1.27;body.castShadow=true;model.add(body);
-    const pack=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.62,.74,.34,3,3,2),packMat),"explorer");pack.position.set(0,1.27,.42);pack.castShadow=true;pack.visible=!blocky;model.add(pack);
-    const blockyPack=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.62,.68,.24,2,2,1),packMat),"blocky");blockyPack.position.set(0,1.26,.34);blockyPack.castShadow=true;blockyPack.visible=blocky;model.add(blockyPack);
-    const packFlap=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.54,.2,.1,2,2,1),packMat),"explorer");packFlap.position.set(0,1.5,.62);packFlap.castShadow=true;packFlap.visible=!blocky;model.add(packFlap);
-    const harness=mat(0x17262b),belt=mat(0x5b3d28);
-    for(const x of [-.22,.22]){const strap=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.055,.72,.055),harness),"explorer");strap.position.set(x,1.3,-.39);strap.rotation.z=x*.16;strap.visible=!blocky;model.add(strap);}
-    const beltMesh=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.82,.14,.48,2,1,2),belt),"explorer");beltMesh.position.set(0,.88,0);beltMesh.castShadow=true;beltMesh.visible=!blocky;model.add(beltMesh);
-    for(const x of [-.4,.4]){const pouch=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.18,.22,.2,2,2,1),belt),"explorer");pouch.position.set(x,.84,-.28);pouch.castShadow=true;pouch.visible=!blocky;model.add(pouch);}
-    const bedroll=styleObject(new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,.72,8),boot),"explorer");bedroll.rotation.z=Math.PI/2;bedroll.position.set(0,.82,.55);bedroll.visible=!blocky;model.add(bedroll);
-    for(const x of [-.23,.23]){const strap=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.06,.72,.05),boot),"explorer");strap.position.set(x,1.25,.64);strap.visible=!blocky;model.add(strap);}
-    for(const x of [-.2,.2]){const strap=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.07,.62,.035),harness),"blocky");strap.position.set(x,1.28,.205);strap.rotation.z=x*.12;strap.visible=blocky;model.add(strap);}
-    const neck=new THREE.Mesh(new THREE.CylinderGeometry(.15,.17,.18,8),skin);neck.position.y=1.83;model.add(neck);
-    const headGeometries={explorer:new THREE.IcosahedronGeometry(.38,1),blocky:new THREE.BoxGeometry(.72,.72,.72)};
-    const head=new THREE.Mesh(headGeometries[activeCharacter],skin);styleGeometry(head,headGeometries.explorer,headGeometries.blocky);head.position.y=2.12;head.castShadow=true;model.add(head);
-    const faceMat=new THREE.MeshStandardMaterial({color:0x1c1b1e, roughness:0.72, metalness:0.08});
-    const faceDetails=new THREE.Group();head.add(faceDetails);
-    const leftEye=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMat);leftEye.position.set(-.12,.06,-.38);faceDetails.add(leftEye);
-    const rightEye=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMat);rightEye.position.set(.12,.06,-.38);faceDetails.add(rightEye);
-    const nose=new THREE.Mesh(new THREE.ConeGeometry(.045,.16,12),faceMat);nose.rotation.x=-Math.PI/2;nose.position.set(0,-.02,-.43);faceDetails.add(nose);
-    const earGeo=new THREE.BoxGeometry(.12,.2,.12);for(const x of [-.39,.39]){const ear=styleObject(new THREE.Mesh(earGeo,skin),"blocky");ear.position.set(x,0,-.01);ear.visible=blocky;head.add(ear);}
-    const mouth=styleObject(new THREE.Mesh(new THREE.BoxGeometry(.18,.04,.02),faceMat),"explorer");mouth.position.set(0,-.18,-.32);faceDetails.add(mouth);
-    nose.visible=true;mouth.visible=!blocky;
-    const smile=styleObject(new THREE.Mesh(new THREE.TorusGeometry(.13,.018,6,16,Math.PI),faceMat),"blocky");smile.rotation.z=Math.PI;smile.position.set(0,-.1,-.405);faceDetails.add(smile);smile.visible=blocky;
-    const hairGeometries={explorer:new THREE.SphereGeometry(.39,8,5,0,Math.PI*2,0,Math.PI*.48),blocky:new THREE.BoxGeometry(.76,.25,.76)};
-    const hair=new THREE.Mesh(hairGeometries[activeCharacter],hairMat);styleGeometry(hair,hairGeometries.explorer,hairGeometries.blocky);hair.position.y=blocky?2.56:2.23;model.add(hair);
-    const limb=(x:number,y:number,material:THREE.Material,length:number,radius:number)=>{const pivot=new THREE.Group();pivot.position.set(x,y,0);const explorerParts=styleObject(new THREE.Group(),"explorer"),blockyParts=styleObject(new THREE.Group(),"blocky"),cylinder=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius*.9,length,7),material);cylinder.position.y=-length/2;cylinder.castShadow=true;explorerParts.add(cylinder);const upper=new THREE.Mesh(new THREE.BoxGeometry(radius*2.35,length*.52,radius*2.35),material),lower=new THREE.Mesh(new THREE.BoxGeometry(radius*2.35,length*.48,radius*2.35),skin);upper.position.y=-length*.26;lower.position.y=-length*.76;upper.castShadow=lower.castShadow=true;blockyParts.add(upper,lower);explorerParts.visible=!blocky;blockyParts.visible=blocky;pivot.add(explorerParts,blockyParts);model.add(pivot);return pivot;};
-    const leftArm=limb(-.56,1.58,shirt,.72,.13),rightArm=limb(.56,1.58,shirt,.72,.13);
-    for(const x of [-.5,.5]){const shoulderGeometries={explorer:new THREE.SphereGeometry(.2,8,6),blocky:new THREE.BoxGeometry(.28,.28,.48)},shoulder=new THREE.Mesh(shoulderGeometries[activeCharacter],shirt);styleGeometry(shoulder,shoulderGeometries.explorer,shoulderGeometries.blocky);shoulder.position.set(x,1.58,0);shoulder.scale.set(1.05,.82,1);shoulder.castShadow=true;model.add(shoulder);}
-    const collar=styleObject(new THREE.Mesh(new THREE.TorusGeometry(.2,.055,6,12),shirt),"explorer");collar.rotation.x=Math.PI/2;collar.position.y=1.86;collar.visible=!blocky;model.add(collar);
-    const handGeometries={explorer:new THREE.SphereGeometry(.14,7,6),blocky:new THREE.BoxGeometry(.24,.24,.24)};
-    const leftHand=new THREE.Mesh(handGeometries[activeCharacter],skin);styleGeometry(leftHand,handGeometries.explorer,handGeometries.blocky);leftHand.position.y=-.75;leftArm.add(leftHand);
-    const rightHand=new THREE.Mesh(handGeometries[activeCharacter],skin);styleGeometry(rightHand,handGeometries.explorer,handGeometries.blocky);rightHand.position.y=-.75;rightArm.add(rightHand);
-    const leftLeg=limb(-.23,.82,pants,.83,.17),rightLeg=limb(.23,.82,pants,.83,.17);
-    const sole=mat(0x101b20),bootGeometries={explorer:new THREE.CapsuleGeometry(.16,.24,3,6),blocky:new THREE.BoxGeometry(.34,.22,.58)},leftBoot=new THREE.Mesh(bootGeometries[activeCharacter],boot);styleGeometry(leftBoot,bootGeometries.explorer,bootGeometries.blocky);leftBoot.rotation.x=blocky?0:Math.PI/2;leftBoot.position.set(0,-.84,-.16);leftBoot.scale.set(1,1,1.12);leftBoot.castShadow=true;leftLeg.add(leftBoot);
-    const leftSole=new THREE.Mesh(new THREE.BoxGeometry(.3,.1,.5,2,1,2),sole);leftSole.position.set(0,-.98,-.16);leftSole.castShadow=true;leftLeg.add(leftSole);
-    const rightBoot=new THREE.Mesh(bootGeometries[activeCharacter],boot);styleGeometry(rightBoot,bootGeometries.explorer,bootGeometries.blocky);rightBoot.rotation.x=leftBoot.rotation.x;rightBoot.position.copy(leftBoot.position);rightBoot.scale.copy(leftBoot.scale);rightBoot.castShadow=true;const rightSole=leftSole.clone();rightLeg.add(rightBoot,rightSole);
-    const setCharacter=(character:CharacterStyle)=>{if(activeCharacter===character)return;model.traverse(object=>{const style=object.userData.characterStyle;if(style==="explorer"||style==="blocky")object.visible=style===character;});styleUpdates.forEach(update=>update(character));hair.position.y=character==="blocky"?2.56:2.23;leftBoot.rotation.x=rightBoot.rotation.x=character==="blocky"?0:Math.PI/2;activeCharacter=character;};
-    bodyShape.current={player:model,body,leftArm,rightArm,setCharacter};
-    const width=.78+look.build*.5,height=.82+look.height*.38,arms=.82+look.muscle*.55;model.scale.set(width,height,width);body.scale.set(1+look.muscle*.18,1,1+look.muscle*.18);leftArm.scale.set(arms,1,arms);rightArm.scale.set(arms,1,arms);leftArm.position.x=-(.48+look.build*.11+look.muscle*.07);rightArm.position.x=-leftArm.position.x;
+    const player=new THREE.Group(),rig=buildCharacterRig(appearanceRef.current),model=rig.model;
+    const {body,leftArm,rightArm,rightHand,leftLeg,rightLeg}=rig;
+    scene.add(player);player.add(model);player.position.set(0,surfaceHeight(0,90),90);
+    lookMaterials.current=rig.materials;
+    bodyShape.current={player:model,body,leftArm,rightArm,setCharacter:rig.setCharacter};
 
     for (let i = 0; i < 28; i++) {
       const a = i < 5 ? (i / 5 * Math.PI * 2) : rand(i + 1810) * Math.PI * 2;
@@ -1059,35 +1080,15 @@ export default function IslandGame() {
     const builtWalls: THREE.Mesh[] = [];
 */
 
-    type RemoteAvatar={root:THREE.Group;model:THREE.Group;leftArm:THREE.Group;rightArm:THREE.Group;leftLeg:THREE.Group;rightLeg:THREE.Group;target:THREE.Vector3;renderTarget:THREE.Vector3;velocity:THREE.Vector3;rotation:number;pose:string;anim:[number,number,number,number,number]|null;seen:number;sampleAt:number;serverUpdatedAt:number;rockMesh:THREE.Mesh|null;rockState:OnlineRock|null};
+    type RemoteAvatar={root:THREE.Group;model:THREE.Group;body:THREE.Mesh;leftArm:THREE.Group;rightArm:THREE.Group;leftLeg:THREE.Group;rightLeg:THREE.Group;materials:Record<ColorKey,THREE.MeshStandardMaterial>;setCharacter:(character:CharacterStyle)=>void;appearance:Appearance;target:THREE.Vector3;renderTarget:THREE.Vector3;velocity:THREE.Vector3;rotation:number;renderRotation:number;samples:RemoteSample[];pose:string;anim:[number,number,number,number,number]|null;seen:number;sampleAt:number;serverUpdatedAt:number;rockMesh:THREE.Mesh|null;rockState:OnlineRock|null};
     const remotePlayers=new Map<string,RemoteAvatar>();
     let localVoiceStream:MediaStream|null=null,processVoiceSignals: (signals:VoiceSignal[],players:OnlinePlayer[])=>void=()=>{};const voicePeers=new Map<string,RTCPeerConnection>(),voiceAudios=new Map<string,HTMLAudioElement>(),seenSignals=new Set<number>(),pendingCandidates=new Map<string,RTCIceCandidateInit[]>();
     const makeRemote=(p:OnlinePlayer)=>{
-      const root=new THREE.Group(),avatar=new THREE.Group(),look={...DEFAULT_LOOK,...p.appearance},blocky=look.character==="blocky";root.add(avatar);scene.add(root);
-      const remoteMat=(color:number)=>new THREE.MeshStandardMaterial({color,roughness:.82,flatShading:true});
-      const skinR=remoteMat(look.skin),shirtR=remoteMat(look.shirt),pantsR=remoteMat(look.pants),packR=remoteMat(look.pack),hairR=remoteMat(look.hair),bootsR=remoteMat(0x17262b);
-      const torso=new THREE.Mesh(blocky?new THREE.BoxGeometry(.78,.92,.46):new THREE.CapsuleGeometry(.43,.74,3,7),shirtR);torso.position.y=1.22;avatar.add(torso);
-      const backpack=new THREE.Mesh(new THREE.BoxGeometry(.67,.78,.36),packR);backpack.position.set(0,1.25,.43);backpack.visible=!blocky;avatar.add(backpack);
-      const blockyBackpack=new THREE.Mesh(new THREE.BoxGeometry(.62,.68,.24,2,2,1),packR);blockyBackpack.position.set(0,1.24,.34);blockyBackpack.visible=blocky;avatar.add(blockyBackpack);
-      for(const x of [-.2,.2]){const strap=new THREE.Mesh(new THREE.BoxGeometry(.07,.62,.035),shirtR);strap.position.set(x,1.26,.205);strap.rotation.z=x*.12;strap.visible=blocky;avatar.add(strap);}
-      const face=new THREE.Mesh(blocky?new THREE.BoxGeometry(.72,.72,.72):new THREE.IcosahedronGeometry(.38,1),skinR);face.position.y=2.12;avatar.add(face);
-      const faceMatR=new THREE.MeshStandardMaterial({color:0x1c1b1e, roughness:0.72, metalness:0.08});
-      const faceDetailsR=new THREE.Group();face.add(faceDetailsR);
-      const leftEyeR=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMatR);leftEyeR.position.set(-.12,.06,-.38);faceDetailsR.add(leftEyeR);
-      const rightEyeR=new THREE.Mesh(new THREE.SphereGeometry(.05,12,12),faceMatR);rightEyeR.position.set(.12,.06,-.38);faceDetailsR.add(rightEyeR);
-      const noseR=new THREE.Mesh(new THREE.ConeGeometry(.045,.16,12),faceMatR);noseR.rotation.x=-Math.PI/2;noseR.position.set(0,-.02,-.43);faceDetailsR.add(noseR);
-      const earGeoR=new THREE.BoxGeometry(.12,.2,.12);for(const x of [-.39,.39]){const ear=new THREE.Mesh(earGeoR,skinR);ear.position.set(x,0,-.01);ear.visible=blocky;face.add(ear);}
-      const mouthR=new THREE.Mesh(new THREE.BoxGeometry(.18,.04,.02),faceMatR);mouthR.position.set(0,-.18,-.32);faceDetailsR.add(mouthR);
-      const smileR=new THREE.Mesh(new THREE.TorusGeometry(.13,.018,6,16,Math.PI),faceMatR);smileR.rotation.z=Math.PI;smileR.position.set(0,-.1,-.405);smileR.visible=blocky;faceDetailsR.add(smileR);noseR.visible=true;mouthR.visible=!blocky;
-      const cap=new THREE.Mesh(blocky?new THREE.BoxGeometry(.76,.25,.76):new THREE.SphereGeometry(.39,8,5,0,Math.PI*2,0,Math.PI*.48),hairR);cap.position.y=blocky?2.56:2.23;avatar.add(cap);
-      const remoteLimb=(x:number,y:number,material:THREE.Material,length:number,radius:number)=>{const pivot=new THREE.Group();pivot.position.set(x,y,0);if(blocky){const upper=new THREE.Mesh(new THREE.BoxGeometry(radius*2.35,length*.52,radius*2.35),material),lower=new THREE.Mesh(new THREE.BoxGeometry(radius*2.35,length*.48,radius*2.35),skinR);upper.position.y=-length*.26;lower.position.y=-length*.76;pivot.add(upper,lower);}else{const mesh=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius*.9,length,6),material);mesh.position.y=-length/2;pivot.add(mesh);}avatar.add(pivot);return pivot;};
-      const leftArmR=remoteLimb(-.56,1.58,shirtR,.72,.13),rightArmR=remoteLimb(.56,1.58,shirtR,.72,.13),leftLegR=remoteLimb(-.23,.82,pantsR,.83,.17),rightLegR=remoteLimb(.23,.82,pantsR,.83,.17);
-      const handR=new THREE.Mesh(blocky?new THREE.BoxGeometry(.24,.24,.24):new THREE.SphereGeometry(.14,7,6),skinR);handR.position.y=-.75;leftArmR.add(handR);rightArmR.add(handR.clone());
-      const bootR=new THREE.Mesh(new THREE.BoxGeometry(.28,.2,.45),bootsR);bootR.position.set(0,-.86,-.08);leftLegR.add(bootR);rightLegR.add(bootR.clone());
-      const width=.78+look.build*.5,height=.82+look.height*.38,armScale=.82+look.muscle*.55;avatar.scale.set(width,height,width);torso.scale.set(1+look.muscle*.18,1,1+look.muscle*.18);leftArmR.scale.set(armScale,1,armScale);rightArmR.scale.set(armScale,1,armScale);
+      const root=new THREE.Group(),rig=buildCharacterRig(p.appearance),avatar=rig.model;root.add(avatar);scene.add(root);
       const canvas=document.createElement("canvas");canvas.width=256;canvas.height=64;const ctx2=canvas.getContext("2d");if(ctx2){ctx2.font="bold 26px Arial";ctx2.textAlign="center";ctx2.fillStyle="#071719cc";ctx2.fillRect(0,8,256,44);ctx2.fillStyle="#eafff5";ctx2.fillText(p.name,128,40);}const label=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas),transparent:true,depthTest:false}));label.position.y=2.9;label.scale.set(3.2,.8,1);root.add(label);
       const target=new THREE.Vector3(p.x/100,p.y/100,p.z/100);root.position.copy(target);root.rotation.y=p.rotation/100;
-      const sampleAt=performance.now();return {root,model:avatar,leftArm:leftArmR,rightArm:rightArmR,leftLeg:leftLegR,rightLeg:rightLegR,target,renderTarget:target.clone(),velocity:new THREE.Vector3(),rotation:p.rotation/100,pose:p.pose,anim:p.anim,seen:sampleAt,sampleAt,serverUpdatedAt:p.updatedAt,rockMesh:null,rockState:null};
+      const sampleAt=performance.now(),rotation=p.rotation/100;
+      return {root,model:avatar,body:rig.body,leftArm:rig.leftArm,rightArm:rig.rightArm,leftLeg:rig.leftLeg,rightLeg:rig.rightLeg,materials:rig.materials,setCharacter:rig.setCharacter,appearance:{...DEFAULT_LOOK,...p.appearance},target,renderTarget:target.clone(),velocity:new THREE.Vector3(),rotation,renderRotation:rotation,samples:[{time:sampleAt,position:target.clone(),rotation}],pose:p.pose,anim:p.anim,seen:sampleAt,sampleAt,serverUpdatedAt:p.updatedAt,rockMesh:null,rockState:null};
     };
 
     let yaw=0, pitch=.32, last=performance.now(), lastHud=0, lastSync=0,lastNpcSync=0,lastFullSync=0,lastBoundaryNotice=0, gameTime=.08,lastRoomServerNow=0, health=100, oxygen=100, scrap=0, cells=0, wood=0,stone=0,treasure=0,discoveries=0,craftedRaft=false,ridingRaft=false,downed=false,downedTimer=0,reviveProgress=0,won=false, gameOver=false, damagedAt=0, messageUntil=0, syncInFlight=0, localPose="idle",packHealReady=true;
@@ -1148,7 +1149,62 @@ export default function IslandGame() {
       if(state.state==="held"){avatar.model.add(mesh);const s=new THREE.Vector3();avatar.model.getWorldScale(s);mesh.scale.set(state.scale[0]/s.x,state.scale[1]/s.y,state.scale[2]/s.z);mesh.position.set(.72,1.12,-.28);mesh.rotation.set(.2,0,0);}
       else{scene.attach(mesh);mesh.scale.set(...state.scale);mesh.position.set(...state.position);}
     };
-    const applyOnlineState=(state:OnlineState)=>{scrap=state.room.scrap;cells=state.room.cells;if(state.messages)setChatMessages(state.messages);if(state.room.serverNow>lastRoomServerNow){lastRoomServerNow=state.room.serverNow;gameTime=state.room.time;}for(const id of state.collected){const pickup=pickups[id];if(pickup){pickup.taken=true;pickup.mesh.visible=false;}}const stamp=performance.now(),authorityId=[onlineSession?.playerId??"",...state.players.map(p=>p.id)].filter(Boolean).sort()[0];for(const remote of state.players){const snap=(remote.appearance as Appearance&{_npcs?:NpcSnapshot})._npcs;if(remote.id===authorityId&&snap){snap.z.forEach((p,i)=>{if(zombies[i]){zombies[i].root.position.set(p[0],p[1],p[2]);zombies[i].root.rotation.y=p[3];zombies[i].stunnedUntil=performance.now()+(p[4]??0);}});dragon.position.set(snap.d[0],snap.d[1],snap.d[2]);dragon.rotation.y=snap.d[3];}let avatar=remotePlayers.get(remote.id);if(!avatar){avatar=makeRemote(remote);remotePlayers.set(remote.id,avatar);}avatar.seen=stamp;if(remote.updatedAt<avatar.serverUpdatedAt)continue;const nextTarget=new THREE.Vector3(remote.x/100,remote.y/100,remote.z/100);const sampleSeconds=(remote.updatedAt-avatar.serverUpdatedAt)/1000;if(sampleSeconds>.04){const measuredVelocity=nextTarget.clone().sub(avatar.target).divideScalar(sampleSeconds);if(measuredVelocity.length()>11)measuredVelocity.setLength(11);avatar.velocity.lerp(measuredVelocity,.55);}avatar.target.copy(nextTarget);avatar.sampleAt=stamp;avatar.serverUpdatedAt=remote.updatedAt;avatar.rotation=remote.rotation/100;avatar.pose=remote.pose;avatar.anim=remote.anim;updateRemoteRock(avatar,remote.rock);}processVoiceSignals(state.signals??[],state.players);for(const [id,avatar] of remotePlayers)if(stamp-avatar.seen>2500){scene.remove(avatar.root);if(avatar.rockMesh)scene.remove(avatar.rockMesh);remotePlayers.delete(id);}setHud(h=>({...h,scrap,cells,onlineCount:state.players.length+1}));if(state.room.won&&!won){won=true;gameOver=true;beacon.intensity=12;beacon.color.set(0x4dffb8);setEnd("won");}};
+    const updateRemoteAppearance=(avatar:RemoteAvatar,appearance:Appearance)=>{
+      const next={...DEFAULT_LOOK,...appearance},previous=avatar.appearance;
+      for(const key of COLOR_KEYS)if(previous[key]!==next[key])avatar.materials[key].color.setHex(next[key]);
+      avatar.setCharacter(next.character==="blocky"?"blocky":"explorer");
+      const width=.78+next.build*.5,height=.82+next.height*.38,armScale=.82+next.muscle*.55;
+      avatar.model.scale.set(width,height,width);
+      avatar.body.scale.set(1+next.muscle*.18,1,1+next.muscle*.18);
+      avatar.leftArm.scale.set(armScale,1,armScale);
+      avatar.rightArm.scale.set(armScale,1,armScale);
+      avatar.leftArm.position.x=-(.48+next.build*.11+next.muscle*.07);
+      avatar.rightArm.position.x=-avatar.leftArm.position.x;
+      avatar.appearance=next;
+    };
+    const applyOnlineState=(state:OnlineState)=>{
+      scrap=state.room.scrap;
+      cells=state.room.cells;
+      if(state.messages)setChatMessages(state.messages);
+      if(state.room.serverNow>lastRoomServerNow){lastRoomServerNow=state.room.serverNow;gameTime=state.room.time;}
+      for(const id of state.collected){const pickup=pickups[id];if(pickup){pickup.taken=true;pickup.mesh.visible=false;}}
+      const stamp=performance.now(),authorityId=[onlineSession?.playerId??"",...state.players.map(p=>p.id)].filter(Boolean).sort()[0];
+      for(const remote of state.players){
+        const snap=(remote.appearance as Appearance&{_npcs?:NpcSnapshot})._npcs;
+        if(remote.id===authorityId&&snap){
+          snap.z.forEach((p,i)=>{if(zombies[i]){zombies[i].root.position.set(p[0],p[1],p[2]);zombies[i].root.rotation.y=p[3];zombies[i].stunnedUntil=performance.now()+(p[4]??0);}});
+          dragon.position.set(snap.d[0],snap.d[1],snap.d[2]);
+          dragon.rotation.y=snap.d[3];
+        }
+        let avatar=remotePlayers.get(remote.id);
+        if(!avatar){avatar=makeRemote(remote);remotePlayers.set(remote.id,avatar);}
+        avatar.seen=stamp;
+        if(remote.updatedAt<avatar.serverUpdatedAt)continue;
+        updateRemoteAppearance(avatar,remote.appearance);
+        updateRemoteRock(avatar,remote.rock);
+        if(remote.updatedAt===avatar.serverUpdatedAt)continue;
+        const nextTarget=new THREE.Vector3(remote.x/100,remote.y/100,remote.z/100);
+        const sampleSeconds=(remote.updatedAt-avatar.serverUpdatedAt)/1000;
+        if(sampleSeconds>.04){
+          const measuredVelocity=nextTarget.clone().sub(avatar.target).divideScalar(sampleSeconds);
+          if(measuredVelocity.length()>11)measuredVelocity.setLength(11);
+          avatar.velocity.lerp(measuredVelocity,.55);
+        }
+        const rotation=remote.rotation/100;
+        avatar.samples.push({time:stamp,position:nextTarget.clone(),rotation});
+        if(avatar.samples.length>8)avatar.samples.shift();
+        avatar.target.copy(nextTarget);
+        avatar.sampleAt=stamp;
+        avatar.serverUpdatedAt=remote.updatedAt;
+        avatar.rotation=rotation;
+        avatar.pose=remote.pose;
+        avatar.anim=remote.anim;
+      }
+      processVoiceSignals(state.signals??[],state.players);
+      for(const [id,avatar] of remotePlayers)if(stamp-avatar.seen>2500){scene.remove(avatar.root);if(avatar.rockMesh)scene.remove(avatar.rockMesh);remotePlayers.delete(id);}
+      setHud(h=>({...h,scrap,cells,onlineCount:state.players.length+1}));
+      if(state.room.won&&!won){won=true;gameOver=true;beacon.intensity=12;beacon.color.set(0x4dffb8);setEnd("won");}
+    };
     const onlinePost=async(payload:Record<string,unknown>)=>{if(!onlineSession)return null;const response=await fetch("/api/multiplayer",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...payload,...onlineSession})});if(!response.ok)return null;const state=await response.json() as OnlineState;applyOnlineState(state);return state;};
     chatSend.current=(message:string)=>{const clean=message.trim();if(clean)void onlinePost({action:"chat",message:clean});};
     const offered=new Set<string>();
@@ -1474,6 +1530,19 @@ export default function IslandGame() {
         const proposed = proposedPosition.copy(player.position).addScaledVector(velocity, dt); proposed.y = 0;
         const activeColliders = dungeonLevel > 0 ? dungeonColliders : colliders; for (const c of activeColliders) { if ("floor" in c && c.floor !== dungeonLevel) continue; if (mountedDragon && dragonFlightHeight > 3.5) continue; if ("minY" in c && ((c.minY !== undefined && player.position.y < c.minY) || (c.maxY !== undefined && player.position.y > c.maxY))) continue; const colliderGround = surfaceHeight(proposed.x, proposed.z), elevatedBridge = dungeonLevel === 0 && Number.isFinite(fortressBridgeHeight(proposed.x, proposed.z)) && player.position.y > colliderGround + 3; if (elevatedBridge) continue; const dx = proposed.x - c.x, dz = proposed.z - c.z, min = c.r + (mountedDragon ? c.fortressWall ? .55 : walkingDragonRadius : .52); if (Math.abs(dx) > min || Math.abs(dz) > min) continue; const dist = Math.hypot(dx, dz); if (dist < min) { const nx = dist > .001 ? dx / dist : 1, nz = dist > .001 ? dz / dist : 0; proposed.x = c.x + nx * min; proposed.z = c.z + nz * min; velocity.multiplyScalar(.72); } }
         const proposedOnMain = Math.hypot(proposed.x, proposed.z) < PLAY_RADIUS, proposedOnSecond = Math.hypot(proposed.x - SECOND_X, proposed.z) < SECOND_RADIUS - 1, proposedBridge = onBridge(proposed.x, proposed.z), proposedFortressBridge = Number.isFinite(fortressBridgeHeight(proposed.x, proposed.z)), shoreEntry = dungeonLevel === 0 && !inOcean && !proposedOnMain && !proposedOnSecond && !proposedBridge && !proposedFortressBridge; const outsideWorld = proposed.x <= WORLD_MIN_X || proposed.x >= WORLD_MAX_X || Math.abs(proposed.z) >= WORLD_Z_LIMIT; if (outsideWorld) { proposed.x = THREE.MathUtils.clamp(proposed.x, WORLD_MIN_X + 1, WORLD_MAX_X - 1); proposed.z = THREE.MathUtils.clamp(proposed.z, -WORLD_Z_LIMIT + 1, WORLD_Z_LIMIT - 1); velocity.multiplyScalar(-.18); if (now - lastBoundaryNotice > 1800) { lastBoundaryNotice = now; notice("ถึงขอบเขตปลอดภัยของทะเลแล้ว", 1.5); } } player.position.x = proposed.x; player.position.z = proposed.z;
+        const localCharacterHeight=2.9*model.scale.y,localCharacterRadius=(Math.abs(leftArm.position.x)+.16*leftArm.scale.x)*model.scale.x;
+        for(const [id,avatar] of remotePlayers){
+          const remoteBottom=avatar.root.position.y,remoteTop=remoteBottom+2.9*avatar.model.scale.y;
+          if(player.position.y>=remoteTop||remoteBottom>=player.position.y+localCharacterHeight)continue;
+          const dx=proposed.x-avatar.root.position.x,dz=proposed.z-avatar.root.position.z,distance=Math.hypot(dx,dz);
+          const remoteRadius=(Math.abs(avatar.leftArm.position.x)+.16*avatar.leftArm.scale.x)*avatar.model.scale.x,minDistance=localCharacterRadius+remoteRadius;
+          if(distance>=minDistance)continue;
+          const normalX=distance>.001?dx/distance:(onlineSession?.playerId.localeCompare(id)??1)<0?-1:1,normalZ=distance>.001?dz/distance:0;
+          proposed.x=avatar.root.position.x+normalX*minDistance;proposed.z=avatar.root.position.z+normalZ*minDistance;
+          player.position.x=proposed.x;player.position.z=proposed.z;
+          const velocityIntoPlayer=velocity.x*normalX+velocity.z*normalZ;
+          if(velocityIntoPlayer<0){velocity.x-=velocityIntoPlayer*normalX;velocity.z-=velocityIntoPlayer*normalZ;}
+        }
         if (dungeonLevel === 0) {
           for (const controller of walkingDragonControllers) {
             const root = controller.root;
@@ -2029,7 +2098,46 @@ export default function IslandGame() {
         if (now >= dragonHudVisibleUntil) setDragonHud(null);
         if(now-lastHud<20){const dynamicQuest=collectionQuestStatus(collectionQuest,craftedRaft,wood,stone,treasure,discoveries,scrap,cells);setHud(h=>({...h,...dynamicQuest}));}
       }
-      for (const avatar of remotePlayers.values()) { const predictionSeconds = Math.min(.18, Math.max(0, (now - avatar.sampleAt) / 1000)); avatar.renderTarget.copy(avatar.target).addScaledVector(avatar.velocity, predictionSeconds); const gap = avatar.root.position.distanceTo(avatar.renderTarget); if (gap > 12) avatar.root.position.copy(avatar.renderTarget); else avatar.root.position.lerp(avatar.renderTarget, 1 - Math.exp(-dt * 11)); let delta = avatar.rotation - avatar.root.rotation.y; delta = Math.atan2(Math.sin(delta), Math.cos(delta)); avatar.root.rotation.y += delta * (1 - Math.exp(-dt * 10)); const t = now * .008, movingRemote = avatar.pose === "walk" || avatar.pose === "run", swimmingRemote = avatar.pose.startsWith("swim") || avatar.pose === "underwater", a = avatar.anim; const strideRemote = movingRemote ? Math.sin(t * (avatar.pose === "run" ? 1.7 : 1)) * .65 : 0; avatar.leftLeg.rotation.x = THREE.MathUtils.lerp(avatar.leftLeg.rotation.x, avatar.pose === "downed" ? -1.05 : a ? a[2] : swimmingRemote ? .35 + Math.sin(t) * .35 : -strideRemote, .32); avatar.rightLeg.rotation.x = THREE.MathUtils.lerp(avatar.rightLeg.rotation.x, avatar.pose === "downed" ? -1.05 : a ? a[3] : swimmingRemote ? .35 - Math.sin(t) * .35 : strideRemote, .32); avatar.leftArm.rotation.x = THREE.MathUtils.lerp(avatar.leftArm.rotation.x, a ? a[0] : swimmingRemote ? .8 + Math.sin(t) * .5 : strideRemote, .32); avatar.rightArm.rotation.x = THREE.MathUtils.lerp(avatar.rightArm.rotation.x, a ? a[1] : swimmingRemote ? .8 - Math.sin(t) * .5 : -strideRemote, .32); avatar.model.rotation.x = THREE.MathUtils.lerp(avatar.model.rotation.x, avatar.pose === "downed" ? .32 : a ? a[4] : avatar.pose === "underwater" ? -1.18 : 0, .28); avatar.model.rotation.z = THREE.MathUtils.lerp(avatar.model.rotation.z, 0, .18); avatar.model.position.y = THREE.MathUtils.lerp(avatar.model.position.y, avatar.pose === "downed" ? -.42 : 0, .18); if (avatar.rockMesh && avatar.rockState?.state === "thrown") { const r = avatar.rockState, v = r.velocity; avatar.rockMesh.position.set(r.position[0] + v[0] * predictionSeconds, r.position[1] + v[1] * predictionSeconds - .5 * 15 * predictionSeconds * predictionSeconds, r.position[2] + v[2] * predictionSeconds); avatar.rockMesh.rotation.x += dt * 4; avatar.rockMesh.rotation.z += dt * 3; } }
+      if(started&&onlineSession&&paused.current&&now-lastSync>1000&&syncInFlight===0){
+        lastSync=now;lastFullSync=now;syncInFlight=1;
+        void onlinePost({action:"sync",x:player.position.x,y:player.position.y,z:player.position.z,rotation:player.rotation.y,pose:"idle",anim:null,appearance:appearanceRef.current,rock:onlineRock(),full:true}).finally(()=>{syncInFlight=0;});
+      }
+      for (const avatar of remotePlayers.values()) {
+        const predictionSeconds=Math.min(.18,Math.max(0,(now-avatar.sampleAt)/1000));
+        const renderTime=now-REMOTE_INTERPOLATION_DELAY_MS;
+        while(avatar.samples.length>2&&avatar.samples[1].time<renderTime)avatar.samples.shift();
+        const first=avatar.samples[0],second=avatar.samples[1];
+        if(first&&second&&renderTime<=second.time){
+          const span=second.time-first.time;
+          const alpha=span>0?THREE.MathUtils.clamp((renderTime-first.time)/span,0,1):1;
+          avatar.renderTarget.lerpVectors(first.position,second.position,alpha);
+          let rotationDelta=second.rotation-first.rotation;
+          rotationDelta=Math.atan2(Math.sin(rotationDelta),Math.cos(rotationDelta));
+          avatar.renderRotation=first.rotation+rotationDelta*alpha;
+        }else if(first){
+          const latest=avatar.samples[avatar.samples.length-1]??first;
+          const extrapolationSeconds=Math.min(.18,Math.max(0,(renderTime-latest.time)/1000));
+          avatar.renderTarget.copy(latest.position).addScaledVector(avatar.velocity,extrapolationSeconds);
+          avatar.renderRotation=latest.rotation;
+        }
+        avatar.root.position.copy(avatar.renderTarget);
+        avatar.root.rotation.y=avatar.renderRotation;
+        const t=now*.008,movingRemote=avatar.pose==="walk"||avatar.pose==="run",swimmingRemote=avatar.pose.startsWith("swim")||avatar.pose==="underwater",a=avatar.anim;
+        const strideRemote=movingRemote?Math.sin(t*(avatar.pose==="run"?1.7:1))*.65:0;
+        avatar.leftLeg.rotation.x=THREE.MathUtils.lerp(avatar.leftLeg.rotation.x,avatar.pose==="downed"?-1.05:a?a[2]:swimmingRemote?.35+Math.sin(t)*.35:-strideRemote,.32);
+        avatar.rightLeg.rotation.x=THREE.MathUtils.lerp(avatar.rightLeg.rotation.x,avatar.pose==="downed"?-1.05:a?a[3]:swimmingRemote?.35-Math.sin(t)*.35:strideRemote,.32);
+        avatar.leftArm.rotation.x=THREE.MathUtils.lerp(avatar.leftArm.rotation.x,a?a[0]:swimmingRemote?.8+Math.sin(t)*.5:strideRemote,.32);
+        avatar.rightArm.rotation.x=THREE.MathUtils.lerp(avatar.rightArm.rotation.x,a?a[1]:swimmingRemote?.8-Math.sin(t)*.5:-strideRemote,.32);
+        avatar.model.rotation.x=THREE.MathUtils.lerp(avatar.model.rotation.x,avatar.pose==="downed"?.32:a?a[4]:avatar.pose==="underwater"?-1.18:0,.28);
+        avatar.model.rotation.z=THREE.MathUtils.lerp(avatar.model.rotation.z,0,.18);
+        avatar.model.position.y=THREE.MathUtils.lerp(avatar.model.position.y,avatar.pose==="downed"?-.42:0,.18);
+        if(avatar.rockMesh&&avatar.rockState?.state==="thrown"){
+          const r=avatar.rockState,v=r.velocity;
+          avatar.rockMesh.position.set(r.position[0]+v[0]*predictionSeconds,r.position[1]+v[1]*predictionSeconds-.5*15*predictionSeconds*predictionSeconds,r.position[2]+v[2]*predictionSeconds);
+          avatar.rockMesh.rotation.x+=dt*4;
+          avatar.rockMesh.rotation.z+=dt*3;
+        }
+      }
       for (const avatar of remotePlayers.values()) if (avatar.pose === "downed") { avatar.model.rotation.x = THREE.MathUtils.lerp(avatar.model.rotation.x, 0, .35); avatar.model.rotation.z = THREE.MathUtils.lerp(avatar.model.rotation.z, -1.45, .35); avatar.model.position.y = THREE.MathUtils.lerp(avatar.model.position.y, .18, .25); }
       for (const [id, audio] of voiceAudios) { const avatar = remotePlayers.get(id); if (!avatar) { audio.volume = 0; continue; } const distance = player.position.distanceTo(avatar.root.position), radius = 42; audio.volume = THREE.MathUtils.clamp(1 - distance / radius, 0, 1); }
       const target = cameraTarget.copy(player.position); target.y += mountedDragon ? 3.2 : 1.25 - cameraSwimPose * .65;
