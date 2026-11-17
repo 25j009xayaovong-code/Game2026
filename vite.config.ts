@@ -14,20 +14,20 @@ const localBindingConfig = {
   main: "./worker/index.ts",
   d1_databases: d1
     ? [
-        {
-          binding: d1,
-          database_name: "echo-island-db",
-          database_id: ECHO_ISLAND_DATABASE_ID,
-        },
-      ]
+      {
+        binding: d1,
+        database_name: "echo-island-db",
+        database_id: ECHO_ISLAND_DATABASE_ID,
+      },
+    ]
     : [],
   r2_buckets: r2
     ? [
-        {
-          binding: r2,
-          bucket_name: "site-creator-r2",
-        },
-      ]
+      {
+        binding: r2,
+        bucket_name: "site-creator-r2",
+      },
+    ]
     : [],
 };
 
