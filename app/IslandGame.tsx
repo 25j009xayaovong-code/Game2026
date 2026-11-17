@@ -1958,10 +1958,10 @@ export default function IslandGame() {
         zombies.forEach((z,i)=>{
           z.root.visible=!z.dead&&(z.floor>0?dungeonLevel===z.floor:night&&dungeonLevel===0);if(!z.root.visible)return;
           const stunned=now<z.stunnedUntil,verticalGap=Math.abs(player.position.y-z.root.position.y),toPlayer=zombieDirection.subVectors(player.position,z.root.position);toPlayer.y=0;
-          const distance=toPlayer.length(),sameIsland=(z.root.position.x<260)===(player.position.x<260),canReach=verticalGap<2.4;
+          let distance=toPlayer.length(),sameIsland=(z.root.position.x<260)===(player.position.x<260),canReach=verticalGap<2.4;
           const oldX=z.root.position.x,oldZ=z.root.position.z,eventBoost=nightEvent&&z.floor===0?1.55:1;
           const zombieSpeed=z.size==="big"?.72:z.size==="fat"?.82:z.size==="small"?1.22:1;
-          if(npcAuthority&&!stunned&&sameIsland&&canReach&&distance<78){
+          if(npcAuthority&&!downed&&!stunned&&sameIsland&&canReach&&distance<78){
             const targetAngle=Math.atan2(-toPlayer.x,-toPlayer.z);
             z.root.rotation.y=lerpAngle(z.root.rotation.y,targetAngle,Math.min(1,dt*4.5));
             const forward=wanderDirection.set(-Math.sin(z.root.rotation.y),0,-Math.cos(z.root.rotation.y));
@@ -1977,17 +1977,34 @@ export default function IslandGame() {
               if("floor" in c&&c.floor!==z.floor)continue;
               const dx=z.root.position.x-c.x,dz=z.root.position.z-c.z,min=c.r+.46*z.root.scale.x;
               if(Math.abs(dx)>min||Math.abs(dz)>min)continue;
-              if(Math.hypot(dx,dz)<min){z.root.position.x=oldX;z.root.position.z=oldZ;z.root.rotation.y+=Math.PI*.62;break;}
+              if(Math.hypot(dx,dz)<min){z.root.position.x=oldX;z.root.position.z=oldZ;break;}
+            }
+            const sameLevel=z.floor===0?dungeonLevel===0:dungeonLevel===z.floor;
+            if(!downed&&sameLevel&&canReach){
+              const dx=z.root.position.x-player.position.x,dz=z.root.position.z-player.position.z,playerClearance=1.35;
+              const playerDistance=Math.hypot(dx,dz);
+              if(playerDistance<playerClearance){
+                const normalX=playerDistance>.001?dx/playerDistance:1;
+                const normalZ=playerDistance>.001?dz/playerDistance:0;
+                z.root.position.x=player.position.x+normalX*playerClearance;
+                z.root.position.z=player.position.z+normalZ*playerClearance;
+                toPlayer.subVectors(player.position,z.root.position);
+                toPlayer.y=0;
+                distance=toPlayer.length();
+              }
             }
           }
-          if(npcAuthority&&canReach&&distance<1.35){const targetAngle=Math.atan2(-toPlayer.x,-toPlayer.z);z.root.rotation.y=lerpAngle(z.root.rotation.y,targetAngle,Math.min(1,dt*7));}
+          if(npcAuthority&&!downed&&!stunned&&canReach&&distance<1.5){const targetAngle=Math.atan2(-toPlayer.x,-toPlayer.z);z.root.rotation.y=lerpAngle(z.root.rotation.y,targetAngle,Math.min(1,dt*7));}
           const zombieOnSecond=z.floor===0&&Math.hypot(z.root.position.x-SECOND_X,z.root.position.z-SECOND_Z)<SECOND_RADIUS;
           const zombieGround=z.floor>0?DUNGEON_LEVELS[z.floor-1]:zombieOnSecond?secondSurfaceHeight(z.root.position.x,z.root.position.z):surfaceHeight(z.root.position.x,z.root.position.z);
           z.root.position.y=zombieGround+(stunned?(z.size==="small"?.08:.42):0);
           z.root.rotation.x=THREE.MathUtils.lerp(z.root.rotation.x,stunned?.18:0,Math.min(1,dt*12));
           z.root.rotation.z=THREE.MathUtils.lerp(z.root.rotation.z,stunned?(z.size==="small"?-1.55:-1.42):0,Math.min(1,dt*10));
-          const biting=!stunned&&canReach&&distance<1.5,walk=stunned||biting?0:Math.sin(now*.008+z.phase)*.28;
-          z.leftArm.rotation.x=biting?-.9:-.62-walk;z.rightArm.rotation.x=biting?-.9:-.62+walk;z.leftLeg.rotation.x=-walk;z.rightLeg.rotation.x=walk;
+          const biting=!downed&&!stunned&&canReach&&distance<1.5,walk=stunned||biting?0:Math.sin(now*.008+z.phase)*.28;
+          const attackLift=biting?Math.max(0,Math.sin(now*.018+z.phase))*.55:0;
+          z.leftArm.rotation.x=biting?.35+attackLift:.62+walk;
+          z.rightArm.rotation.x=biting?.35+attackLift:.62-walk;
+          z.leftLeg.rotation.x=-walk;z.rightLeg.rotation.x=walk;
           const dungeonBoss=z.floor>0&&i>=surfaceZombieCount+6;
           if(!downed&&biting&&now-z.lastHit>850){
             z.lastHit=now;const biteDamage=dungeonBoss?15:10;health=Math.max(0,health-biteDamage);sound(82,.18);
