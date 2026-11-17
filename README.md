@@ -1,8 +1,8 @@
-# vinext-starter
+# Echo Island
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+Echo Island is a 3D survival game built with React, Three.js, and
+[vinext](https://github.com/cloudflare/vinext). Its optional multiplayer mode
+uses Cloudflare D1 and Drizzle.
 
 ## Prerequisites
 
@@ -18,14 +18,16 @@ npm run build
 
 The Cloudflare runtime configuration is defined in `wrangler.jsonc`.
 
-## Included Shape
+## Project Structure
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+- `app/IslandGame.tsx` contains the game, HUD, customization, and client-side
+  Three.js scene.
+- `app/api/multiplayer/route.ts` provides the multiplayer room API.
+- `.openai/hosting.json` declares the D1 binding used by multiplayer.
+- `vite.config.ts` configures the local Cloudflare bindings.
+- `db/` and `drizzle/` contain the multiplayer schema and migrations.
+- `worker-configuration.d.ts` contains Wrangler-generated Cloudflare types;
+  regenerate it with `npm run types`.
 
 ## Workspace Auth Headers
 
@@ -89,7 +91,9 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 
 - `npm run dev`: start local development
 - `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
+- `npm test`: build the game and verify its server-rendered page using Wrangler's local runtime
+- `npm run types`: regenerate Cloudflare Worker binding types
+- `npm run deploy`: build and deploy the Cloudflare Pages site
 - `npm run db:generate`: generate Drizzle migrations after schema changes
 
 ## Learn More
