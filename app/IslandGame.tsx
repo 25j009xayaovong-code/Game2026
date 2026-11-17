@@ -867,6 +867,7 @@ export default function IslandGame() {
       wings: THREE.Group[];
       jaw: THREE.Group;
       route: { x: number; z: number }[];
+      routeIsland: 0 | 1;
       waypointIndex: number;
       gaitBlend: number;
       gaitPhase: number;
@@ -883,12 +884,12 @@ export default function IslandGame() {
     const walkingDragonControllers: WalkingDragonController[] = [];
     const walkingDragonRouteRadius = 12;
     const walkingDragonRoutePoints = 32;
-    const findWalkingDragonRoute = (startAngle: number) => {
+    const findWalkingDragonRoute = (startAngle: number, preferredIsland: 0 | 1 = 0) => {
       const islands = [
         { x: 0, z: 0, maxRadius: ISLAND_RADIUS - walkingDragonRadius - walkingDragonRouteRadius - 12 },
         { x: SECOND_X, z: SECOND_Z, maxRadius: SECOND_RADIUS - walkingDragonRadius - walkingDragonRouteRadius - 12 },
       ];
-      for (const island of islands) {
+      for (const island of [islands[preferredIsland], islands[preferredIsland === 0 ? 1 : 0]]) {
         const rings = Math.floor(island.maxRadius / 16);
         for (let ring = 0; ring <= rings; ring++) {
           const centerRadius = ring * 16;
@@ -946,6 +947,7 @@ export default function IslandGame() {
         wings: namedGroups("walking-dragon-wing-"),
         jaw,
         route,
+        routeIsland: 0,
         waypointIndex: 1,
         gaitBlend: 0,
         gaitPhase: 0,
@@ -1089,7 +1091,7 @@ export default function IslandGame() {
     };
 
     let yaw=0, pitch=.32, last=performance.now(), lastHud=0, lastSync=0,lastNpcSync=0,lastFullSync=0,lastBoundaryNotice=0, gameTime=.08,lastRoomServerNow=0, health=100, oxygen=100, scrap=0, cells=0, wood=0,stone=0,treasure=0,discoveries=0,craftedRaft=false,ridingRaft=false,downed=false,downedTimer=0,reviveProgress=0,won=false, gameOver=false, damagedAt=0, messageUntil=0, syncInFlight=0, localPose="idle",packHealReady=true;
-    let jumpHeight=0, jumpVelocity=0, jumpWasDown=false, dragonFlightHeight=0, dragonOnFortressBridge=false, swimDepth=0, cameraSwimPose=0, cameraInWater=false, heldRock:ThrowableRock|null=null, lastActionRock:ThrowableRock|null=null, isAiming=false, springCooldown=0, climbing=false, climbHeight=0,climbFort=-1,dungeonLevel=0,falling=false,fallY=0,fallVelocity=0,lastSupportY=surfaceHeight(0,90),smoothStairY=lastSupportY;const discovered=new Set<number>();
+    let jumpHeight=0, jumpVelocity=0, jumpWasDown=false, dragonFlightHeight=0, dragonOnFortressBridge=false, swimDepth=0, cameraSwimPose=0, cameraInWater=false, heldRock:ThrowableRock|null=null, lastActionRock:ThrowableRock|null=null, isAiming=false, dragonAiming=false, springCooldown=0, climbing=false, climbHeight=0,climbFort=-1,dungeonLevel=0,falling=false,fallY=0,fallVelocity=0,lastSupportY=surfaceHeight(0,90),smoothStairY=lastSupportY;const discovered=new Set<number>();
     const velocity=new THREE.Vector3(),moveDir=new THREE.Vector3(),zeroVelocity=new THREE.Vector3(),proposedPosition=new THREE.Vector3(),zombieDirection=new THREE.Vector3(),wanderDirection=new THREE.Vector3(),enemyDirection=new THREE.Vector3(),cameraTarget=new THREE.Vector3(),desiredCamera=new THREE.Vector3();
     const sky=new THREE.Color(),nightSky=new THREE.Color(0x07121f),daySky=new THREE.Color(0x91d6d0),eventSky=new THREE.Color(0x521629);
     const starGeometry=new THREE.BufferGeometry(),starPositions:number[]=[];
@@ -1203,11 +1205,26 @@ export default function IslandGame() {
     const fireMountedDragon = () => {
       if (!mountedDragon || performance.now() < mountedDragon.fireAt) return;
       const fireball = walkingDragonFireballs.find(projectile => !projectile.active) ?? createWalkingDragonFireball();
+      if (dragonAiming) {
+        camera.getWorldDirection(walkingDragonAimDirection);
+        const horizontalLength = Math.hypot(walkingDragonAimDirection.x, walkingDragonAimDirection.z);
+        if (horizontalLength > 0.001) {
+          const heading = Math.atan2(walkingDragonAimDirection.x, walkingDragonAimDirection.z);
+          mountedDragon.root.rotation.y = heading;
+          player.rotation.y = heading - Math.PI;
+        }
+      } else {
+        walkingDragonFireTarget.set(0, 5.35, 10.3);
+      }
       mountedDragon.root.updateWorldMatrix(true, false);
       walkingDragonMuzzle.set(0, 5.35, 3.3);
       mountedDragon.root.localToWorld(walkingDragonMuzzle);
-      camera.getWorldDirection(walkingDragonAimDirection);
-      walkingDragonFireTarget.copy(camera.position).addScaledVector(walkingDragonAimDirection, 80);
+      if (dragonAiming) {
+        walkingDragonFireTarget.copy(camera.position).addScaledVector(walkingDragonAimDirection, 80);
+      } else {
+        mountedDragon.root.localToWorld(walkingDragonFireTarget);
+        walkingDragonFireTarget.sub(walkingDragonMuzzle).normalize().multiplyScalar(80).add(walkingDragonMuzzle);
+      }
       fireball.root.position.copy(walkingDragonMuzzle);
       fireball.velocity.copy(walkingDragonFireTarget).sub(walkingDragonMuzzle).normalize().multiplyScalar(22);
       fireball.age = 0;
@@ -1341,6 +1358,7 @@ export default function IslandGame() {
         jumpHeight = 0;
         jumpVelocity = 0;
         model.visible = true;
+        dragonAiming = false;
         setDragonRideState("hidden");
         setAimingDragon(false);
         velocity.set(0, 0, 0);
@@ -1364,6 +1382,7 @@ export default function IslandGame() {
       dragonFlightHeight = 0;
       dragonOnFortressBridge = false;
       model.visible = false;
+      dragonAiming = false;
       setDragonRideState("riding");
       setAimingDragon(false);
       player.position.set(nearest.controller.root.position.x, surfaceHeight(nearest.controller.root.position.x, nearest.controller.root.position.z), nearest.controller.root.position.z);
@@ -1395,6 +1414,7 @@ export default function IslandGame() {
     const startAimTouch = (e: TouchEvent) => {
       if (!mountedDragon || e.touches.length !== 1) return;
       lastAimTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      dragonAiming = true;
       setAimingDragon(true);
     };
     const moveAimTouch = (e: TouchEvent) => {
@@ -1405,10 +1425,10 @@ export default function IslandGame() {
       pitch = THREE.MathUtils.clamp(pitch + (touch.clientY - lastAimTouch.y) * .004, -.3, .8);
       lastAimTouch = { x: touch.clientX, y: touch.clientY };
     };
-    const endAimTouch = () => { lastAimTouch = null; setAimingDragon(false); };
-    const mouseDown = (e: MouseEvent) => { if (document.pointerLockElement !== renderer.domElement) return; if (e.button === 2 && mountedDragon) setAimingDragon(true); else if (e.button === 2 && heldRock) { isAiming = true; setAimingRock(true); } else if (e.button === 0 && mountedDragon) fireMountedDragon(); else if (e.button === 0 && heldRock) throwHeldRock(isAiming); };
-    const mouseUp = (e: MouseEvent) => { if (e.button === 2) { setAimingDragon(false); isAiming = false; setAimingRock(false); } };
-    const pointerLockChanged = () => { if (document.pointerLockElement !== renderer.domElement) { setAimingDragon(false); setAimingRock(false); isAiming = false; } };
+    const endAimTouch = () => { lastAimTouch = null; dragonAiming = false; setAimingDragon(false); };
+    const mouseDown = (e: MouseEvent) => { if (document.pointerLockElement !== renderer.domElement) return; if (e.button === 2 && mountedDragon) { dragonAiming = true; setAimingDragon(true); } else if (e.button === 2 && heldRock) { isAiming = true; setAimingRock(true); } else if (e.button === 0 && mountedDragon) fireMountedDragon(); else if (e.button === 0 && heldRock) throwHeldRock(isAiming); };
+    const mouseUp = (e: MouseEvent) => { if (e.button === 2) { dragonAiming = false; setAimingDragon(false); isAiming = false; setAimingRock(false); } };
+    const pointerLockChanged = () => { if (document.pointerLockElement !== renderer.domElement) { dragonAiming = false; setAimingDragon(false); setAimingRock(false); isAiming = false; } };
     const preventMenu = (e: Event) => e.preventDefault();
     addEventListener("keydown", down); addEventListener("keyup", up); addEventListener("mousemove", moveMouse); addEventListener("mousedown", mouseDown); addEventListener("mouseup", mouseUp); document.addEventListener("pointerlockchange", pointerLockChanged); renderer.domElement.addEventListener("touchstart", startAimTouch, { passive: true }); renderer.domElement.addEventListener("touchmove", moveAimTouch, { passive: false }); renderer.domElement.addEventListener("touchend", endAimTouch); renderer.domElement.addEventListener("touchcancel", endAimTouch); renderer.domElement.addEventListener("contextmenu", preventMenu);
     renderer.domElement.addEventListener("click", () => { if (started && !gameOver) renderer.domElement.requestPointerLock?.(); });
@@ -1682,108 +1702,52 @@ export default function IslandGame() {
         animateDragon(dragon,now,0,1);dragonVariants.forEach(({root,phase,speed})=>{const variantAngle=gameTime*Math.PI*2*speed+phase,variantX=SECOND_X*.5+Math.cos(variantAngle)*315,variantZ=Math.sin(variantAngle)*175,variantOverSecond=Math.hypot(variantX-SECOND_X,variantZ)<SECOND_RADIUS,variantOverMain=Math.hypot(variantX,variantZ)<ISLAND_RADIUS,variantGround=variantOverSecond?secondSurfaceHeight(variantX,variantZ):variantOverMain?surfaceHeight(variantX,variantZ):OCEAN_LEVEL;root.visible=dungeonLevel===0&&!root.userData.dead;root.position.set(variantX,variantGround+34+Math.sin(variantAngle*2.5)*10,variantZ);root.rotation.y=Math.atan2(-315*Math.sin(variantAngle),175*Math.cos(variantAngle));const wingMotion=Math.sin(now*.009*speed)*.32;root.children.filter(child=>child.type==="Group").forEach((wing,index)=>{wing.rotation.z=index? -wingMotion:wingMotion;});animateDragon(root,now,phase,speed);});
         walkingDragonControllers.forEach((controller, index) => {
           const root = controller.root;
-          if (controller.defeated) {
+          if (controller.defeated && mountedDragon === controller) {
             root.visible = dungeonLevel === 0;
-            if (mountedDragon === controller) {
-              root.position.x = player.position.x;
-              root.position.z = player.position.z;
-              root.rotation.y = player.rotation.y + Math.PI;
-              if (jumpHeight <= 0.025) {
-                const riddenSpeed = velocity.length();
-                controller.gaitBlend = THREE.MathUtils.damp(
-                  controller.gaitBlend,
-                  riddenSpeed > 0.5 ? 1 : 0,
-                  riddenSpeed > 0.5 ? 3 : 2,
-                  dt,
-                );
-                if (riddenSpeed > 0.5) {
-                  controller.gaitPhase += riddenSpeed * dt * (Math.PI * 2 / 4.5);
-                }
+            root.position.x = player.position.x;
+            root.position.z = player.position.z;
+            root.rotation.y = player.rotation.y + Math.PI;
+            if (jumpHeight <= 0.025) {
+              const riddenSpeed = velocity.length();
+              controller.gaitBlend = THREE.MathUtils.damp(
+                controller.gaitBlend,
+                riddenSpeed > 0.5 ? 1 : 0,
+                riddenSpeed > 0.5 ? 3 : 2,
+                dt,
+              );
+              if (riddenSpeed > 0.5) {
+                controller.gaitPhase += riddenSpeed * dt * (Math.PI * 2 / 4.5);
               }
-            } else if (root.visible && controller.landingY === null) {
-              const waypoint = controller.route[controller.waypointIndex];
-              walkingDragonMove.set(waypoint.x - root.position.x, waypoint.z - root.position.z);
-              let targetDistance = walkingDragonMove.length();
-              if (targetDistance < 0.45) {
-                controller.waypointIndex = (controller.waypointIndex + 1) % controller.route.length;
-                const nextWaypoint = controller.route[controller.waypointIndex];
-                walkingDragonMove.set(nextWaypoint.x - root.position.x, nextWaypoint.z - root.position.z);
-                targetDistance = walkingDragonMove.length();
-              }
-              let moved = false;
-              if (targetDistance > 0.001) {
-                walkingDragonMove.normalize();
-                const stepLength = Math.min(targetDistance, dt * 1.8 * controller.speed);
-                const stepCount = Math.max(1, Math.ceil(stepLength / 0.5));
-                let blocked = false;
-                for (let step = 1; step <= stepCount && !blocked; step++) {
-                  const fraction = step / stepCount;
-                  walkingDragonTestPosition.set(
-                    root.position.x + walkingDragonMove.x * stepLength * fraction,
-                    root.position.z + walkingDragonMove.y * stepLength * fraction,
-                  );
-                  for (const obstacle of colliders) {
-                    const clearance = obstacle.r + walkingDragonRadius;
-                    if ((walkingDragonTestPosition.x - obstacle.x) ** 2
-                      + (walkingDragonTestPosition.y - obstacle.z) ** 2 < clearance ** 2) {
-                      blocked = true;
-                      break;
-                    }
-                  }
-                }
-                if (!blocked) {
-                  root.position.x += walkingDragonMove.x * stepLength;
-                  root.position.z += walkingDragonMove.y * stepLength;
-                  root.rotation.y = lerpAngle(root.rotation.y, Math.atan2(walkingDragonMove.x, walkingDragonMove.y), Math.min(1, dt * 2));
-                  moved = true;
-                }
-              }
-              controller.gaitBlend = THREE.MathUtils.damp(controller.gaitBlend, moved ? 1 : 0, moved ? 3 : 2, dt);
-              if (moved) controller.gaitPhase += dt * 1.8 * controller.speed * (Math.PI * 2 / 4.5);
-            } else {
-              controller.gaitBlend = THREE.MathUtils.damp(controller.gaitBlend, 0, 2, dt);
             }
-            const gait = Math.sin(controller.gaitPhase) * controller.gaitBlend;
-            const flying = mountedDragon === controller && dragonFlightHeight > 0.1;
+            const flying = dragonFlightHeight > 0.1;
             const movingInFlight = flying && velocity.length() > 0.5;
             const wingRhythm = Math.sin(now * 0.012 + index);
             const hoverLegSwing = Math.sin(now * 0.0025);
             controller.frontLegs.forEach((leg, legIndex) => {
               leg.rotation.x = flying
                 ? movingInFlight ? -0.55 : hoverLegSwing * 0.16 * (legIndex ? -1 : 1)
-                : mountedDragon === controller && jumpHeight > 0.025
-                  ? -0.55
+                : jumpHeight > 0.025 ? -0.55
                   : Math.sin(controller.gaitPhase + (legIndex ? Math.PI : 0)) * 0.38 * controller.gaitBlend;
             });
             controller.hindLegs.forEach((leg, legIndex) => {
               leg.rotation.x = flying
                 ? movingInFlight ? 0.7 : hoverLegSwing * 0.2 * (legIndex ? -1 : 1)
-                : mountedDragon === controller && jumpHeight > 0.025
-                  ? 0.7
+                : jumpHeight > 0.025 ? 0.7
                   : Math.sin(controller.gaitPhase + (legIndex ? 0 : Math.PI)) * 0.48 * controller.gaitBlend;
-            });
-            controller.tail.forEach((segment, tailIndex) => {
-              segment.rotation.y = Math.sin(now * 0.0025 - tailIndex * 0.35) * (0.08 + tailIndex * 0.035);
             });
             controller.wings.forEach((wing, wingIndex) => {
               wing.rotation.z = (wingIndex ? -1 : 1) * (flying
                 ? 0.14 + wingRhythm * 0.3
                 : 0.04 + Math.sin(now * 0.002 + index) * 0.015);
             });
+            controller.tail.forEach((segment, tailIndex) => {
+              segment.rotation.y = Math.sin(now * 0.0025 - tailIndex * 0.35) * (0.08 + tailIndex * 0.035);
+            });
             controller.jaw.rotation.x = 0.08 + Math.max(0, Math.sin(now * 0.003 + index)) * 0.12;
-            root.rotation.z = flying ? 0 : -gait * 0.025;
-            root.rotation.x = flying ? 0 : gait * 0.012;
-            const bob = flying
-              ? (1 - wingRhythm) * 0.12
-              : Math.abs(Math.sin(controller.gaitPhase) * controller.gaitBlend) * 0.045;
-            if (mountedDragon === controller) {
-              root.position.y = player.position.y - 0.12 + bob;
-            } else {
-              const onSecondIsland = Math.hypot(root.position.x - SECOND_X, root.position.z) < SECOND_RADIUS;
-              root.position.y = Math.max(OCEAN_LEVEL + 0.45, onSecondIsland
-                ? secondSurfaceHeight(root.position.x, root.position.z)
-                : surfaceHeight(root.position.x, root.position.z)) + bob;
-            }
+            root.rotation.z = flying ? 0 : -Math.sin(controller.gaitPhase) * controller.gaitBlend * 0.025;
+            root.rotation.x = flying ? 0 : Math.sin(controller.gaitPhase) * controller.gaitBlend * 0.012;
+            const bob = dragonFlightHeight > 0.1 ? (1 - Math.sin(now * 0.012 + index)) * 0.12 : 0;
+            root.position.y = player.position.y - 0.12 + bob;
             return;
           }
           const playerDragonDistance = Math.hypot(
@@ -1795,13 +1759,22 @@ export default function IslandGame() {
             controller.aggro = false;
           }
           const isAggro = controller.aggro;
+          const wildFlightPhase = (now / 1000 + controller.flightOffset) % 60;
+          const wildFlying = !isAggro && wildFlightPhase < 30;
           const waypoint = controller.route[controller.waypointIndex];
-          walkingDragonMove.set(
-            (isAggro ? player.position.x : waypoint.x) - root.position.x,
-            (isAggro ? player.position.z : waypoint.z) - root.position.z,
-          );
+          if (wildFlying) {
+            walkingDragonMove.set(
+              (controller.routeIsland === 0 ? SECOND_X : 0) - root.position.x,
+              -root.position.z,
+            );
+          } else {
+            walkingDragonMove.set(
+              (isAggro ? player.position.x : waypoint.x) - root.position.x,
+              (isAggro ? player.position.z : waypoint.z) - root.position.z,
+            );
+          }
           let targetDistance = walkingDragonMove.length();
-          if (!isAggro && targetDistance < 0.45) {
+          if (!isAggro && !wildFlying && targetDistance < 0.45) {
             controller.waypointIndex = (controller.waypointIndex + 1) % controller.route.length;
             const nextWaypoint = controller.route[controller.waypointIndex];
             walkingDragonMove.set(nextWaypoint.x - root.position.x, nextWaypoint.z - root.position.z);
@@ -1812,7 +1785,7 @@ export default function IslandGame() {
           root.visible = dungeonLevel === 0;
           if (root.visible && targetDistance > 0.001) {
             walkingDragonMove.normalize();
-            stepLength = Math.min(targetDistance, dt * (isAggro ? 4 : 1.8 * controller.speed));
+            stepLength = Math.min(targetDistance, dt * (wildFlying ? 18 : isAggro ? 4 : 1.8 * controller.speed));
             const stepCount = Math.max(1, Math.ceil(stepLength / 0.5));
             let blocked = false;
             for (let step = 1; isAggro && step <= stepCount && !blocked; step++) {
@@ -1843,17 +1816,23 @@ export default function IslandGame() {
           }
           controller.gaitBlend = THREE.MathUtils.damp(controller.gaitBlend, moved ? 1 : 0, moved ? 3 : 2, dt);
           if (moved) controller.gaitPhase += stepLength * (Math.PI * 2 / 4.5);
-          const wildFlightPhase = (now / 1000 + controller.flightOffset) % 60;
-          const wildFlying = !isAggro && wildFlightPhase < 12;
-          const wildFlightLift = wildFlying ? Math.sin(wildFlightPhase / 12 * Math.PI) * 10 : 0;
+          const onSecondIsland = Math.hypot(root.position.x - SECOND_X, root.position.z) < SECOND_RADIUS;
+          const currentIsland: 0 | 1 = onSecondIsland ? 1 : 0;
+          if (!wildFlying && !isAggro && controller.routeIsland !== currentIsland) {
+            controller.route = findWalkingDragonRoute(controller.flightOffset / 60 * Math.PI * 2, currentIsland);
+            controller.routeIsland = currentIsland;
+            controller.waypointIndex = 1;
+          }
+          const wildFlightLift = wildFlying ? Math.sin(wildFlightPhase / 30 * Math.PI) * 28 : 0;
           const gait = Math.sin(controller.gaitPhase) * controller.gaitBlend;
           const flightAnimation = (mountedDragon === controller && dragonFlightHeight > 0.1)
             || wildFlying
             || controller.landingY !== null;
-          const movingInFlight = flightAnimation && (mountedDragon === controller ? velocity.length() : stepLength) > 0.5;
+          const movingInFlight = flightAnimation
+            && (mountedDragon === controller ? velocity.length() : wildFlying ? 1 : stepLength) > 0.5;
           const wingRhythm = Math.sin(now * 0.012 + index);
           const hoverLegSwing = Math.sin(now * 0.0025);
-          const onSecondIsland = Math.hypot(root.position.x - SECOND_X, root.position.z) < SECOND_RADIUS;
+          const flightBodyBob = flightAnimation ? (1 - wingRhythm) * 0.12 : Math.abs(gait) * 0.045;
           if (controller.landingY !== null) {
             root.position.y = THREE.MathUtils.damp(root.position.y, controller.landingY, 1.1, dt);
             if (Math.abs(root.position.y - controller.landingY) < 0.15) {
@@ -1863,7 +1842,7 @@ export default function IslandGame() {
           } else {
             root.position.y = (onSecondIsland
               ? secondSurfaceHeight(root.position.x, root.position.z)
-              : surfaceHeight(root.position.x, root.position.z)) + wildFlightLift + Math.abs(gait) * 0.045;
+              : surfaceHeight(root.position.x, root.position.z)) + wildFlightLift + flightBodyBob;
           }
           root.rotation.z = flightAnimation ? 0 : -gait * 0.025;
           root.rotation.x = flightAnimation ? 0 : gait * 0.012;
@@ -1888,10 +1867,15 @@ export default function IslandGame() {
           });
           if (isAggro && playerDragonDistance < 28 && now >= controller.fireAt && !downed) {
             const fireball = walkingDragonFireballs.find(projectile => !projectile.active) ?? createWalkingDragonFireball();
-            fireball.root.position.set(0, 5.35, 3.3);
-            root.localToWorld(fireball.root.position);
             walkingDragonFireTarget.copy(player.position);
             walkingDragonFireTarget.y += 1.15;
+            root.rotation.y = Math.atan2(
+              walkingDragonFireTarget.x - root.position.x,
+              walkingDragonFireTarget.z - root.position.z,
+            );
+            root.updateWorldMatrix(true, false);
+            fireball.root.position.set(0, 5.35, 3.3);
+            root.localToWorld(fireball.root.position);
             fireball.velocity.copy(walkingDragonFireTarget)
               .sub(fireball.root.position)
               .normalize()
