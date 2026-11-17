@@ -1010,6 +1010,7 @@ export default function IslandGame() {
     const walkingDragonHitCenter = new THREE.Vector3();
     const walkingDragonFireTarget = new THREE.Vector3();
     const walkingDragonAimDirection = new THREE.Vector3();
+    const walkingDragonFireDirection = new THREE.Vector3(0, 0, 1);
     const walkingDragonMuzzle = new THREE.Vector3();
     const walkingDragonFireballPrevious = new THREE.Vector3();
     const walkingDragonFireballs: { root: THREE.Group; velocity: THREE.Vector3; age: number; active: boolean; owner: "hostile" | "ridden" }[] = [];
@@ -1034,8 +1035,6 @@ export default function IslandGame() {
         flame.rotation.x = -Math.PI / 2;
         fireball.add(flame);
       }
-      const fireLight = new THREE.PointLight(0xff5a12, 2.5, 8);
-      fireball.add(fireLight);
       fireball.visible = false;
       scene.add(fireball);
       const projectile = { root: fireball, velocity: new THREE.Vector3(), age: 0, active: false, owner: "hostile" as "hostile" | "ridden" };
@@ -1107,9 +1106,17 @@ export default function IslandGame() {
       const material=new THREE.MeshBasicMaterial({color:band===1?0xb47cff:0x55f5d2,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending});
       const ribbon=new THREE.Mesh(geometry,material);ribbon.position.set(Math.cos(band*2.1)*155,band*8,Math.sin(band*2.1)*155);ribbon.rotation.y=band*2.1+Math.PI/2;ribbon.rotation.z=(band-.9)*.035;aurora.add(ribbon);auroraMaterials.push(material);
     }
+    let audioContext: AudioContext | null = null;
     const notice=(message:string,secs=2.5)=>{messageUntil=performance.now()+secs*1000;setHud(h=>({...h,message}));};
     const rewardProgress=(xpGain:number,coinGain:number,achievement?:string)=>setProgress(p=>{const xp=p.xp+xpGain,level=1+Math.floor(xp/100),newAchievement=achievement&&!p.achievements.includes(achievement),achievements=newAchievement?[...p.achievements,achievement]:p.achievements;return {...p,xp,coins:p.coins+coinGain,level,unlocks:Math.max(p.unlocks,Math.floor(level/2)),achievements};});
-    const sound=(freq:number,dur=.12)=>{try{const ac=new AudioContext();const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=freq;o.type="sine";g.gain.setValueAtTime(.07,ac.currentTime);g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+dur);o.connect(g).connect(ac.destination);o.start();o.stop(ac.currentTime+dur);}catch{}};
+    const sound=(freq:number,dur=.12)=>{
+      try{
+        audioContext ??= new AudioContext();
+        if(audioContext.state==="suspended") void audioContext.resume();
+        const o=audioContext.createOscillator(),g=audioContext.createGain(),now=audioContext.currentTime;
+        o.frequency.value=freq;o.type="sine";g.gain.setValueAtTime(.07,now);g.gain.exponentialRampToValueAtTime(.001,now+dur);o.connect(g).connect(audioContext.destination);o.start(now);o.stop(now+dur);
+      }catch{}
+    };
     upgradeAction.current = (upgrade) => {
       if (runUpgrades[upgrade]) {
         notice("คุณคราฟต์อัปเกรดนี้แล้ว");
@@ -1207,7 +1214,8 @@ export default function IslandGame() {
       fireball.owner = "ridden";
       fireball.active = true;
       fireball.root.visible = true;
-      fireball.root.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), fireball.velocity.clone().normalize());
+      walkingDragonFireTarget.copy(fireball.velocity).normalize();
+      fireball.root.quaternion.setFromUnitVectors(walkingDragonFireDirection, walkingDragonFireTarget);
       mountedDragon.fireAt = performance.now() + 850;
       sound(240, 0.14);
     };
@@ -1892,10 +1900,8 @@ export default function IslandGame() {
             fireball.owner = "hostile";
             fireball.active = true;
             fireball.root.visible = true;
-            fireball.root.quaternion.setFromUnitVectors(
-              new THREE.Vector3(0, 0, 1),
-              fireball.velocity.clone().normalize(),
-            );
+            walkingDragonFireTarget.copy(fireball.velocity).normalize();
+            fireball.root.quaternion.setFromUnitVectors(walkingDragonFireDirection, walkingDragonFireTarget);
             controller.fireAt = now + 1800;
             sound(170, 0.18);
           }
@@ -2038,7 +2044,7 @@ export default function IslandGame() {
       renderer.render(scene, camera);
     }; tick();
     const resize = () => { camera.aspect = host.clientWidth / host.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(host.clientWidth, host.clientHeight) }; addEventListener("resize", resize);
-    return () => { cancelAnimationFrame(raf); removeEventListener("resize", resize); removeEventListener("keydown", down); removeEventListener("keyup", up); removeEventListener("mousemove", moveMouse); removeEventListener("mousedown", mouseDown); removeEventListener("mouseup", mouseUp); document.removeEventListener("pointerlockchange", pointerLockChanged); renderer.domElement.removeEventListener("touchstart", startAimTouch); renderer.domElement.removeEventListener("touchmove", moveAimTouch); renderer.domElement.removeEventListener("touchend", endAimTouch); renderer.domElement.removeEventListener("touchcancel", endAimTouch); renderer.domElement.removeEventListener("contextmenu", preventMenu); localVoiceStream?.getTracks().forEach(t => t.stop()); voicePeers.forEach(p => p.close()); voiceAudios.forEach(a => a.pause()); voiceToggle.current = () => { }; chatSend.current = () => { }; rockAction.current = () => { }; upgradeAction.current = () => {}; mountDragonAction.current = () => {}; lookMaterials.current = null; bodyShape.current = null; renderer.dispose(); host.innerHTML = ""; };
+    return () => { cancelAnimationFrame(raf); removeEventListener("resize", resize); removeEventListener("keydown", down); removeEventListener("keyup", up); removeEventListener("mousemove", moveMouse); removeEventListener("mousedown", mouseDown); removeEventListener("mouseup", mouseUp); document.removeEventListener("pointerlockchange", pointerLockChanged); renderer.domElement.removeEventListener("touchstart", startAimTouch); renderer.domElement.removeEventListener("touchmove", moveAimTouch); renderer.domElement.removeEventListener("touchend", endAimTouch); renderer.domElement.removeEventListener("touchcancel", endAimTouch); renderer.domElement.removeEventListener("contextmenu", preventMenu); localVoiceStream?.getTracks().forEach(t => t.stop()); voicePeers.forEach(p => p.close()); voiceAudios.forEach(a => a.pause()); void audioContext?.close(); voiceToggle.current = () => { }; chatSend.current = () => { }; rockAction.current = () => { }; upgradeAction.current = () => {}; mountDragonAction.current = () => {}; lookMaterials.current = null; bodyShape.current = null; renderer.dispose(); host.innerHTML = ""; };
   }, [started, onlineSession?.playerId]);
 
   const press = (code: string, on: boolean) => { keys.current[code] = on; };
