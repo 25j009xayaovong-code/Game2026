@@ -93,7 +93,7 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 - `npm run build`: verify the vinext build output
 - `npm test`: build the game and verify its server-rendered page using Wrangler's local runtime
 - `npm run types`: regenerate Cloudflare Worker binding types
-- `npm run deploy`: build and deploy the Cloudflare Pages site
+- `npm run deploy`: build and deploy the Cloudflare Worker. Configure a D1 binding named `DB` in `wrangler.jsonc` first if you want multiplayer rooms to work remotely.
 - `npm run db:generate`: generate Drizzle migrations after schema changes
 
 ## Learn More
